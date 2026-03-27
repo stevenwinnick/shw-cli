@@ -93,3 +93,35 @@ func TestLeafReceivesArgs(t *testing.T) {
 		t.Fatalf("leaf did not receive passthrough args: %v", got)
 	}
 }
+
+func TestHelpIncludesLocalFlags(t *testing.T) {
+	leaf := &Command{
+		Name:        "local",
+		Description: "leaf",
+		Usage:       "shw local [flags] [args...]",
+		Flags: []Flag{
+			{Long: "no-worktrees", Description: "Create the repo directly in the prompted directory"},
+		},
+	}
+	root := &Command{Name: "shw", Description: "root", Usage: "shw <command>"}
+	root.AddChild(leaf)
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	code := Run(root, []string{"local", "-h"}, stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+
+	text := stdout.String()
+	if !strings.Contains(text, "shw local [flags] [args...]") {
+		t.Fatalf("help missing usage: %s", text)
+	}
+	if !strings.Contains(text, "--no-worktrees") {
+		t.Fatalf("help missing local flag: %s", text)
+	}
+	if !strings.Contains(text, "-h, --help") {
+		t.Fatalf("help missing help flag: %s", text)
+	}
+}

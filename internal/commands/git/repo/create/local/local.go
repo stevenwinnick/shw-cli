@@ -11,23 +11,26 @@ var (
 	runCommandInDir               = utils.RunCommandInDir
 )
 
+var noWorktreesFlag = cli.Flag{
+	Long:        "no-worktrees",
+	Description: "Create the repo directly in the prompted directory",
+}
+
 func Command() *cli.Command {
 	return &cli.Command{
 		Name:        "local",
-		Summary:     "Create a local git repo, optionally using your worktree layout",
-		Description: "Prompts for a relative repo path, creates the repo in your worktree layout by default, and runs `git init` there",
-		Usage:       "shw git repo create local [--no-worktrees] [git-init-args...]",
-		Notes: []string{
-			"Pass --no-worktrees to create the repo directly in the prompted directory",
-		},
-		Run: run,
+		Summary:     "Create a local git repo",
+		Description: "Creates a local git repo in your worktree layout by default",
+		Usage:       "shw git repo create local [flags] [git-init-args...]",
+		Flags:       []cli.Flag{noWorktreesFlag},
+		Run:         run,
 	}
 }
 
 func run(args []string) error {
-	useWorktrees, gitInitArgs := parseNoWorktreesFlag(args)
+	noWorktrees, gitInitArgs := cli.ConsumeBoolFlag(args, noWorktreesFlag)
 
-	targetPaths, err := promptRelativeRepoTargetPaths("Relative repo path: ", gitInitArgs, useWorktrees)
+	targetPaths, err := promptRelativeRepoTargetPaths("Relative repo path: ", gitInitArgs, !noWorktrees)
 	if err != nil {
 		return err
 	}
@@ -37,18 +40,4 @@ func run(args []string) error {
 
 	gitArgs := append([]string{"init"}, gitInitArgs...)
 	return runCommandInDir(targetPaths.WorkingDir, "git", gitArgs...)
-}
-
-func parseNoWorktreesFlag(args []string) (bool, []string) {
-	useWorktrees := true
-	filtered := make([]string, 0, len(args))
-	for _, arg := range args {
-		if arg == "--no-worktrees" {
-			useWorktrees = false
-			continue
-		}
-		filtered = append(filtered, arg)
-	}
-
-	return useWorktrees, filtered
 }
