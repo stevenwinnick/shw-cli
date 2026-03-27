@@ -1,0 +1,108 @@
+package worktree
+
+import (
+	"fmt"
+
+	"shw-cli/internal/cli"
+	wtmgr "shw-cli/internal/worktree"
+)
+
+var (
+	createWorktree   = wtmgr.Create
+	listWorktrees    = wtmgr.List
+	removeWorktree   = wtmgr.Remove
+	cleanAllWorktree = wtmgr.CleanAll
+	switchWorktree   = wtmgr.Switch
+)
+
+func Command() *cli.Command {
+	worktree := &cli.Command{
+		Name:        "worktree",
+		Summary:     "Manage git worktrees in Steven's preferred layout",
+		Description: "Create, list, remove, clean, and resolve git worktrees in Steven's preferred layout",
+		Usage:       "shw git worktree <command>",
+	}
+
+	worktree.AddChild(newLeafCommand(
+		"create",
+		"Create a worktree for a branch",
+		"Create a worktree for a branch in Steven's preferred layout",
+		"shw git worktree create <repo-dir> <branch-name>",
+		runCreate,
+	))
+	worktree.AddChild(newLeafCommand(
+		"list",
+		"List worktrees and statuses",
+		"List worktrees for a repo and show the status of each worktree",
+		"shw git worktree list <repo-dir>",
+		runList,
+	))
+	worktree.AddChild(newLeafCommand(
+		"remove",
+		"Remove a worktree and local branch",
+		"Remove a worktree for a branch and delete the local branch",
+		"shw git worktree remove <repo-dir> <branch-name>",
+		runRemove,
+	))
+	worktree.AddChild(newLeafCommand(
+		"clean-all",
+		"Prune stale worktrees",
+		"Prune stale worktree metadata and remove worktrees for branches that no longer have remote-tracking refs",
+		"shw git worktree clean-all <repo-dir>",
+		runCleanAll,
+	))
+	worktree.AddChild(newLeafCommand(
+		"switch",
+		"Print a worktree path",
+		"Resolve a named worktree in Steven's preferred layout and print its path for use with cd or as a workdir",
+		"shw git worktree switch <repo-dir> <name>",
+		runSwitch,
+	))
+
+	return worktree
+}
+
+func newLeafCommand(name string, summary string, description string, usage string, run func(args []string) error) *cli.Command {
+	return &cli.Command{
+		Name:        name,
+		Summary:     summary,
+		Description: description,
+		Usage:       usage,
+		Run:         run,
+	}
+}
+
+func runCreate(args []string) error {
+	if len(args) != 2 {
+		return fmt.Errorf("usage: shw git worktree create <repo-dir> <branch-name>")
+	}
+	return createWorktree(args[0], args[1])
+}
+
+func runList(args []string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: shw git worktree list <repo-dir>")
+	}
+	return listWorktrees(args[0])
+}
+
+func runRemove(args []string) error {
+	if len(args) != 2 {
+		return fmt.Errorf("usage: shw git worktree remove <repo-dir> <branch-name>")
+	}
+	return removeWorktree(args[0], args[1])
+}
+
+func runCleanAll(args []string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: shw git worktree clean-all <repo-dir>")
+	}
+	return cleanAllWorktree(args[0])
+}
+
+func runSwitch(args []string) error {
+	if len(args) != 2 {
+		return fmt.Errorf("usage: shw git worktree switch <repo-dir> <name>")
+	}
+	return switchWorktree(args[0], args[1])
+}
