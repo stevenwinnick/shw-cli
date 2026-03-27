@@ -12,15 +12,15 @@ var (
 )
 
 var noWorktreesFlag = cli.Flag{
-	Long:        "no-worktrees",
-	Description: "Create the repo directly in the prompted directory",
+	Long:        "no-worktree-setup",
+	Description: "Skip the default worktree setup and create the repo directly in the prompted directory",
 }
 
 func Command() *cli.Command {
 	return &cli.Command{
 		Name:        "local",
 		Summary:     "Create a local git repo",
-		Description: "Creates a local git repo in your worktree layout by default",
+		Description: "Creates a local git repo",
 		Usage:       "shw git repo create local [flags] [git-init-args...]",
 		Flags:       []cli.Flag{noWorktreesFlag},
 		Run:         run,

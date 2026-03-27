@@ -95,7 +95,7 @@ func TestRunAllowsSkippingWorktreeLayout(t *testing.T) {
 
 	promptRelativeRepoTargetPaths = func(_ string, gitInitArgs []string, useWorktrees bool) (utils.RepoTargetPaths, error) {
 		if useWorktrees {
-			t.Fatal("expected --no-worktrees to disable the worktree layout")
+			t.Fatal("expected --no-worktree-setup to disable the worktree layout")
 		}
 		if len(gitInitArgs) != 1 || gitInitArgs[0] != "--bare" {
 			t.Fatalf("git init args mismatch: %v", gitInitArgs)
@@ -127,7 +127,7 @@ func TestRunAllowsSkippingWorktreeLayout(t *testing.T) {
 		return nil
 	}
 
-	if err := run([]string{"--no-worktrees", "--bare"}); err != nil {
+	if err := run([]string{"--no-worktree-setup", "--bare"}); err != nil {
 		t.Fatalf("run returned error: %v", err)
 	}
 }

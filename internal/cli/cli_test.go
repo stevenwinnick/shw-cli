@@ -100,7 +100,7 @@ func TestHelpIncludesLocalFlags(t *testing.T) {
 		Description: "leaf",
 		Usage:       "shw local [flags] [args...]",
 		Flags: []Flag{
-			{Long: "no-worktrees", Description: "Create the repo directly in the prompted directory"},
+			{Long: "no-worktree-setup", Description: "Skip the default worktree setup and create the repo directly in the prompted directory"},
 		},
 	}
 	root := &Command{Name: "shw", Description: "root", Usage: "shw <command>"}
@@ -118,7 +118,7 @@ func TestHelpIncludesLocalFlags(t *testing.T) {
 	if !strings.Contains(text, "shw local [flags] [args...]") {
 		t.Fatalf("help missing usage: %s", text)
 	}
-	if !strings.Contains(text, "--no-worktrees") {
+	if !strings.Contains(text, "--no-worktree-setup") {
 		t.Fatalf("help missing local flag: %s", text)
 	}
 	if !strings.Contains(text, "-h, --help") {
