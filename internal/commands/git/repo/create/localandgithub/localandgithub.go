@@ -7,39 +7,37 @@ import (
 	"shw-cli/internal/utils"
 )
 
-var noWorktreesFlag = cli.Flag{
-	Long:        "no-worktree-setup",
-	Description: "Skip the default worktree setup and create the repo directly in the prompted directory",
-}
+var (
+	promptRelativeDir = utils.PromptRelativeDir
+	ensureDir         = utils.EnsureDir
+	runCommandInDir   = utils.RunCommandInDir
+)
 
 func Command() *cli.Command {
 	return &cli.Command{
 		Name:        "localandgithub",
-		Summary:     "Create a local repo, then create a GitHub repo",
-		Description: "Creates a local repo, then runs `gh repo create` there",
-		Usage:       "shw git repo create localandgithub [flags] [gh-repo-create-args...]",
-		Flags:       []cli.Flag{noWorktreesFlag},
+		Summary:     "Create local repo in a relative directory, then create a GitHub repo",
+		Description: "Prompts for a relative directory path, runs `git init`, then runs `gh repo create` there",
+		Usage:       "shw git repo create localandgithub [gh-repo-create-args...]",
 		Run:         run,
 	}
 }
 
 func run(args []string) error {
-	noWorktrees, ghArgs := cli.ConsumeBoolFlag(args, noWorktreesFlag)
-
-	targetPaths, err := utils.PromptRelativeRepoTargetPaths("Relative repo path: ", nil, !noWorktrees)
+	targetDir, err := promptRelativeDir("Relative directory path: ")
 	if err != nil {
 		return err
 	}
-	if err := utils.EnsureRepoTargetPaths(targetPaths); err != nil {
+	if err := ensureDir(targetDir); err != nil {
 		return err
 	}
 
-	if err := utils.RunCommandInDir(targetPaths.WorkingDir, "git", "init"); err != nil {
+	if err := runCommandInDir(targetDir, "git", "init"); err != nil {
 		return err
 	}
 
 	fmt.Fprint(os.Stdout, "\n***Important: Answer \"Push an existing repository to GitHub\" with a path of \".\"***\n\n")
 
-	ghCommandArgs := append([]string{"repo", "create"}, ghArgs...)
-	return utils.RunCommandInDir(targetPaths.WorkingDir, "gh", ghCommandArgs...)
+	ghArgs := append([]string{"repo", "create"}, args...)
+	return runCommandInDir(targetDir, "gh", ghArgs...)
 }

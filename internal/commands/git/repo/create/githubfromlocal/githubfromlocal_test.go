@@ -1,105 +1,80 @@
 package githubfromlocal
 
 import (
-	"os"
-	"path/filepath"
-	"runtime"
-	"strings"
+	"errors"
 	"testing"
-
-	"shw-cli/internal/testutil"
 )
 
 func TestRunCallsGitHubCreateInSelectedDir(t *testing.T) {
-	testutil.SkipIfWindows(t)
+	origPrompt := promptRelativeDir
+	origEnsure := ensureExistingDir
+	origRun := runCommandInDir
+	defer func() {
+		promptRelativeDir = origPrompt
+		ensureExistingDir = origEnsure
+		runCommandInDir = origRun
+	}()
 
-	rootDir := t.TempDir()
-	targetDir := filepath.Join(rootDir, "existing-repo")
-	if err := os.MkdirAll(targetDir, 0o755); err != nil {
-		t.Fatalf("failed to create target dir: %v", err)
+	const target = "/tmp/existing-repo"
+	var gotDir string
+	var gotName string
+	var gotArgs []string
+
+	promptRelativeDir = func(_ string) (string, error) { return target, nil }
+	ensureExistingDir = func(dir string) error {
+		if dir != target {
+			t.Fatalf("ensureExistingDir got %q, want %q", dir, target)
+		}
+		return nil
 	}
-	testutil.SetWorkingDir(t, rootDir)
-	testutil.SetStdin(t, "existing-repo\n")
-
-	binDir := t.TempDir()
-	ghDirLog := filepath.Join(t.TempDir(), "gh-dir.log")
-	ghArgsLog := filepath.Join(t.TempDir(), "gh-args.log")
-	testutil.WriteExecutable(t, binDir, "gh", fakeGhScript())
-	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("FAKE_GH_DIR_FILE", ghDirLog)
-	t.Setenv("FAKE_GH_ARGS_FILE", ghArgsLog)
+	runCommandInDir = func(dir string, name string, args ...string) error {
+		gotDir = dir
+		gotName = name
+		gotArgs = append([]string{}, args...)
+		return nil
+	}
 
 	if err := run([]string{"my-repo", "--public"}); err != nil {
 		t.Fatalf("run returned error: %v", err)
 	}
 
-	if got := realPath(t, strings.TrimSpace(string(mustReadFile(t, ghDirLog)))); got != realPath(t, targetDir) {
-		t.Fatalf("gh ran in %q, want %q", got, targetDir)
+	if gotDir != target {
+		t.Fatalf("run dir got %q, want %q", gotDir, target)
 	}
-	assertArgs(t, testutil.ReadLines(t, ghArgsLog), []string{"repo", "create", "my-repo", "--public"})
+	if gotName != "gh" {
+		t.Fatalf("run command got %q, want gh", gotName)
+	}
+	want := []string{"repo", "create", "my-repo", "--public"}
+	if len(gotArgs) != len(want) {
+		t.Fatalf("run args len mismatch: got %v want %v", gotArgs, want)
+	}
+	for i := range want {
+		if gotArgs[i] != want[i] {
+			t.Fatalf("run args mismatch at %d: got %q want %q", i, gotArgs[i], want[i])
+		}
+	}
 }
 
 func TestRunStopsIfDirectoryIsMissing(t *testing.T) {
-	rootDir := t.TempDir()
-	testutil.SetWorkingDir(t, rootDir)
-	testutil.SetStdin(t, "repo\n")
+	origPrompt := promptRelativeDir
+	origEnsure := ensureExistingDir
+	origRun := runCommandInDir
+	defer func() {
+		promptRelativeDir = origPrompt
+		ensureExistingDir = origEnsure
+		runCommandInDir = origRun
+	}()
+
+	expectedErr := errors.New("missing directory")
+	promptRelativeDir = func(_ string) (string, error) { return "./repo", nil }
+	ensureExistingDir = func(_ string) error { return expectedErr }
+	runCommandInDir = func(_ string, _ string, _ ...string) error {
+		t.Fatal("runCommandInDir should not be called when ensureExistingDir fails")
+		return nil
+	}
 
 	err := run(nil)
-	if err == nil {
-		t.Fatal("expected missing directory error")
-	}
-	if !strings.Contains(err.Error(), "directory does not exist") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func fakeGhScript() string {
-	if runtime.GOOS == "windows" {
-		return ""
-	}
-
-	return `#!/bin/sh
-printf '%s\n' "$PWD" >"$FAKE_GH_DIR_FILE"
-printf '%s\n' "$@" >"$FAKE_GH_ARGS_FILE"
-`
-}
-
-func mustReadFile(t *testing.T, path string) []byte {
-	t.Helper()
-
-	content, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read %q: %v", path, err)
-	}
-
-	return content
-}
-
-func realPath(t *testing.T, path string) string {
-	t.Helper()
-
-	resolved, err := filepath.EvalSymlinks(path)
-	if err == nil {
-		return resolved
-	}
-
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		t.Fatalf("failed to resolve path %q: %v", path, err)
-	}
-
-	return absolute
-}
-
-func assertArgs(t *testing.T, got []string, want []string) {
-	t.Helper()
-
-	if len(got) != len(want) {
-		t.Fatalf("arg length mismatch: got %v want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("arg mismatch at %d: got %q want %q", i, got[i], want[i])
-		}
+	if !errors.Is(err, expectedErr) {
+		t.Fatalf("expected ensureExistingDir error, got %v", err)
 	}
 }

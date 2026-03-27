@@ -5,6 +5,8 @@ import (
 	"shw-cli/internal/utils"
 )
 
+var runCommand = utils.RunCommand
+
 func Command() *cli.Command {
 	return &cli.Command{
 		Name:        "push",
@@ -16,5 +18,5 @@ func Command() *cli.Command {
 }
 
 func run(_ []string) error {
-	return utils.RunCommand("git", "push", "-u", "origin", "HEAD")
+	return runCommand("git", "push", "-u", "origin", "HEAD")
 }

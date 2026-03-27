@@ -12,7 +12,6 @@ type Command struct {
 	Summary     string
 	Description string
 	Usage       string
-	Flags       []Flag
 	Notes       []string
 	Children    []*Command
 	Run         func(args []string) error
@@ -109,11 +108,7 @@ func printHelp(cmd *Command, stdout io.Writer) {
 
 	fmt.Fprintln(stdout)
 	fmt.Fprintln(stdout, "Flags:")
-	w := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-	for _, flag := range allFlags(cmd) {
-		fmt.Fprintf(w, "  %s\t%s\n", formatFlagLabel(flag), flag.Description)
-	}
-	_ = w.Flush()
+	fmt.Fprintln(stdout, "  -h, --help  Show help for this command")
 }
 
 func isHelpArg(arg string) bool {
