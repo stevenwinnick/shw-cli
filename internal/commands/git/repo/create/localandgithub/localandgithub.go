@@ -7,12 +7,6 @@ import (
 	"shw-cli/internal/utils"
 )
 
-var (
-	promptRelativeRepoTargetPaths = utils.PromptRelativeRepoTargetPaths
-	ensureRepoTargetPaths         = utils.EnsureRepoTargetPaths
-	runCommandInDir               = utils.RunCommandInDir
-)
-
 var noWorktreesFlag = cli.Flag{
 	Long:        "no-worktree-setup",
 	Description: "Skip the default worktree setup and create the repo directly in the prompted directory",
@@ -32,20 +26,20 @@ func Command() *cli.Command {
 func run(args []string) error {
 	noWorktrees, ghArgs := cli.ConsumeBoolFlag(args, noWorktreesFlag)
 
-	targetPaths, err := promptRelativeRepoTargetPaths("Relative repo path: ", nil, !noWorktrees)
+	targetPaths, err := utils.PromptRelativeRepoTargetPaths("Relative repo path: ", nil, !noWorktrees)
 	if err != nil {
 		return err
 	}
-	if err := ensureRepoTargetPaths(targetPaths); err != nil {
+	if err := utils.EnsureRepoTargetPaths(targetPaths); err != nil {
 		return err
 	}
 
-	if err := runCommandInDir(targetPaths.WorkingDir, "git", "init"); err != nil {
+	if err := utils.RunCommandInDir(targetPaths.WorkingDir, "git", "init"); err != nil {
 		return err
 	}
 
 	fmt.Fprint(os.Stdout, "\n***Important: Answer \"Push an existing repository to GitHub\" with a path of \".\"***\n\n")
 
 	ghCommandArgs := append([]string{"repo", "create"}, ghArgs...)
-	return runCommandInDir(targetPaths.WorkingDir, "gh", ghCommandArgs...)
+	return utils.RunCommandInDir(targetPaths.WorkingDir, "gh", ghCommandArgs...)
 }

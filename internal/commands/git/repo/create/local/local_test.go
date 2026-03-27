@@ -1,160 +1,141 @@
 package local
 
 import (
-	"errors"
-	"fmt"
-	"shw-cli/internal/utils"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
+
+	"shw-cli/internal/testutil"
 )
 
-func TestRunUsesPromptEnsureAndGitInit(t *testing.T) {
-	origPrompt := promptRelativeRepoTargetPaths
-	origEnsure := ensureRepoTargetPaths
-	origRun := runCommandInDir
-	defer func() {
-		promptRelativeRepoTargetPaths = origPrompt
-		ensureRepoTargetPaths = origEnsure
-		runCommandInDir = origRun
-	}()
+func TestRunUsesWorktreeSetupAndGitInit(t *testing.T) {
+	testutil.SkipIfWindows(t)
 
-	const target = "/tmp/repo"
-	targetPaths := utils.RepoTargetPaths{
-		WorkingDir:        target,
-		AdditionalWorkDir: "/tmp/worktrees",
-		UsesWorktrees:     true,
-	}
-	var gotPrompt string
-	var gotEnsure utils.RepoTargetPaths
-	var gotDir string
-	var gotName string
-	var gotArgs []string
+	rootDir := t.TempDir()
+	testutil.SetWorkingDir(t, rootDir)
+	testutil.SetStdin(t, "repo\n")
 
-	promptRelativeRepoTargetPaths = func(prompt string, gitInitArgs []string, useWorktrees bool) (utils.RepoTargetPaths, error) {
-		gotPrompt = prompt
-		if !useWorktrees {
-			t.Fatal("expected worktree layout to remain enabled")
-		}
-		if len(gitInitArgs) != 1 || gitInitArgs[0] != "--bare" {
-			t.Fatalf("git init args mismatch: %v", gitInitArgs)
-		}
-		return targetPaths, nil
-	}
-	ensureRepoTargetPaths = func(paths utils.RepoTargetPaths) error {
-		gotEnsure = paths
-		return nil
-	}
-	runCommandInDir = func(dir string, name string, args ...string) error {
-		gotDir = dir
-		gotName = name
-		gotArgs = append([]string{}, args...)
-		return nil
-	}
+	binDir := t.TempDir()
+	gitDirLog := filepath.Join(t.TempDir(), "git-dir.log")
+	gitArgsLog := filepath.Join(t.TempDir(), "git-args.log")
+	testutil.WriteExecutable(t, binDir, "git", fakeGitScript())
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("FAKE_GIT_DIR_FILE", gitDirLog)
+	t.Setenv("FAKE_GIT_ARGS_FILE", gitArgsLog)
 
-	if err := run([]string{"--bare"}); err != nil {
+	if err := run([]string{"--initial-branch", "trunk", "--bare"}); err != nil {
 		t.Fatalf("run returned error: %v", err)
 	}
 
-	if gotPrompt == "" {
-		t.Fatal("expected prompt to be shown")
+	wantDir := realPath(t, filepath.Join(rootDir, "repo", "trunk", "repo"))
+	gotDir := realPath(t, strings.TrimSpace(string(mustReadFile(t, gitDirLog))))
+	if gotDir != wantDir {
+		t.Fatalf("git ran in %q, want %q", gotDir, wantDir)
 	}
-	if gotEnsure != targetPaths {
-		t.Fatalf("ensureRepoTargetPaths got %#v, want %#v", gotEnsure, targetPaths)
-	}
-	if gotDir != target {
-		t.Fatalf("run dir got %q, want %q", gotDir, target)
-	}
-	if gotName != "git" {
-		t.Fatalf("run command got %q, want git", gotName)
-	}
-	wantArgs := []string{"init", "--bare"}
-	if len(gotArgs) != len(wantArgs) {
-		t.Fatalf("run args len %d, want %d: %v", len(gotArgs), len(wantArgs), gotArgs)
-	}
-	for i := range wantArgs {
-		if gotArgs[i] != wantArgs[i] {
-			t.Fatalf("run args mismatch at %d: got %q want %q", i, gotArgs[i], wantArgs[i])
-		}
-	}
+
+	wantArgs := []string{"init", "--initial-branch", "trunk", "--bare"}
+	gotArgs := testutil.ReadLines(t, gitArgsLog)
+	assertArgs(t, gotArgs, wantArgs)
 }
 
-func TestRunAllowsSkippingWorktreeLayout(t *testing.T) {
-	origPrompt := promptRelativeRepoTargetPaths
-	origEnsure := ensureRepoTargetPaths
-	origRun := runCommandInDir
-	defer func() {
-		promptRelativeRepoTargetPaths = origPrompt
-		ensureRepoTargetPaths = origEnsure
-		runCommandInDir = origRun
-	}()
+func TestRunAllowsSkippingWorktreeSetup(t *testing.T) {
+	testutil.SkipIfWindows(t)
 
-	const target = "/tmp/repo"
-	targetPaths := utils.RepoTargetPaths{
-		WorkingDir:    target,
-		UsesWorktrees: false,
-	}
+	rootDir := t.TempDir()
+	testutil.SetWorkingDir(t, rootDir)
+	testutil.SetStdin(t, "repo\n")
 
-	promptRelativeRepoTargetPaths = func(_ string, gitInitArgs []string, useWorktrees bool) (utils.RepoTargetPaths, error) {
-		if useWorktrees {
-			t.Fatal("expected --no-worktree-setup to disable the worktree layout")
-		}
-		if len(gitInitArgs) != 1 || gitInitArgs[0] != "--bare" {
-			t.Fatalf("git init args mismatch: %v", gitInitArgs)
-		}
-		return targetPaths, nil
-	}
-	ensureRepoTargetPaths = func(paths utils.RepoTargetPaths) error {
-		if paths != targetPaths {
-			t.Fatalf("ensureRepoTargetPaths got %#v, want %#v", paths, targetPaths)
-		}
-		return nil
-	}
-	runCommandInDir = func(dir string, name string, args ...string) error {
-		if dir != target {
-			t.Fatalf("run dir got %q, want %q", dir, target)
-		}
-		if name != "git" {
-			t.Fatalf("run command got %q, want git", name)
-		}
-		wantArgs := []string{"init", "--bare"}
-		if len(args) != len(wantArgs) {
-			t.Fatalf("run args len %d, want %d: %v", len(args), len(wantArgs), args)
-		}
-		for i := range wantArgs {
-			if args[i] != wantArgs[i] {
-				t.Fatalf("run args mismatch at %d: got %q want %q", i, args[i], wantArgs[i])
-			}
-		}
-		return nil
-	}
+	binDir := t.TempDir()
+	gitDirLog := filepath.Join(t.TempDir(), "git-dir.log")
+	gitArgsLog := filepath.Join(t.TempDir(), "git-args.log")
+	testutil.WriteExecutable(t, binDir, "git", fakeGitScript())
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("FAKE_GIT_DIR_FILE", gitDirLog)
+	t.Setenv("FAKE_GIT_ARGS_FILE", gitArgsLog)
 
 	if err := run([]string{"--no-worktree-setup", "--bare"}); err != nil {
 		t.Fatalf("run returned error: %v", err)
 	}
+
+	wantDir := realPath(t, filepath.Join(rootDir, "repo"))
+	gotDir := realPath(t, strings.TrimSpace(string(mustReadFile(t, gitDirLog))))
+	if gotDir != wantDir {
+		t.Fatalf("git ran in %q, want %q", gotDir, wantDir)
+	}
+
+	wantArgs := []string{"init", "--bare"}
+	gotArgs := testutil.ReadLines(t, gitArgsLog)
+	assertArgs(t, gotArgs, wantArgs)
 }
 
 func TestRunStopsOnPromptError(t *testing.T) {
-	origPrompt := promptRelativeRepoTargetPaths
-	origEnsure := ensureRepoTargetPaths
-	origRun := runCommandInDir
-	defer func() {
-		promptRelativeRepoTargetPaths = origPrompt
-		ensureRepoTargetPaths = origEnsure
-		runCommandInDir = origRun
-	}()
-
-	expectedErr := errors.New("prompt failed")
-	promptRelativeRepoTargetPaths = func(_ string, _ []string, _ bool) (utils.RepoTargetPaths, error) {
-		return utils.RepoTargetPaths{}, expectedErr
-	}
-	ensureRepoTargetPaths = func(_ utils.RepoTargetPaths) error {
-		return fmt.Errorf("should not be called")
-	}
-	runCommandInDir = func(_ string, _ string, _ ...string) error {
-		return fmt.Errorf("should not be called")
-	}
+	testutil.SetStdin(t, "")
 
 	err := run(nil)
-	if !errors.Is(err, expectedErr) {
-		t.Fatalf("expected prompt error, got %v", err)
+	if err == nil {
+		t.Fatal("expected prompt error")
+	}
+	if !strings.Contains(err.Error(), "directory path is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func fakeGitScript() string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+
+	return `#!/bin/sh
+if [ "$1" = "config" ] && [ "$2" = "--get" ] && [ "$3" = "init.defaultBranch" ]; then
+  printf '%s\n' "${FAKE_GIT_DEFAULT_BRANCH:-trunk}"
+  exit 0
+fi
+printf '%s\n' "$PWD" >"$FAKE_GIT_DIR_FILE"
+printf '%s\n' "$@" >"$FAKE_GIT_ARGS_FILE"
+if [ -n "${FAKE_GIT_FAIL_ON:-}" ] && [ "$1" = "$FAKE_GIT_FAIL_ON" ]; then
+  exit 1
+fi
+`
+}
+
+func mustReadFile(t *testing.T, path string) []byte {
+	t.Helper()
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read %q: %v", path, err)
+	}
+
+	return content
+}
+
+func realPath(t *testing.T, path string) string {
+	t.Helper()
+
+	resolved, err := filepath.EvalSymlinks(path)
+	if err == nil {
+		return resolved
+	}
+
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		t.Fatalf("failed to resolve path %q: %v", path, err)
+	}
+
+	return absolute
+}
+
+func assertArgs(t *testing.T, got []string, want []string) {
+	t.Helper()
+
+	if len(got) != len(want) {
+		t.Fatalf("arg length mismatch: got %v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("arg mismatch at %d: got %q want %q", i, got[i], want[i])
+		}
 	}
 }

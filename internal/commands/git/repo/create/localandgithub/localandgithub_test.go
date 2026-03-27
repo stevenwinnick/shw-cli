@@ -1,175 +1,184 @@
 package localandgithub
 
 import (
-	"errors"
-	"shw-cli/internal/utils"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
+
+	"shw-cli/internal/testutil"
 )
 
-type invocation struct {
-	dir  string
-	name string
-	args []string
-}
-
 func TestRunCallsGitThenGitHubInTargetDir(t *testing.T) {
-	origPrompt := promptRelativeRepoTargetPaths
-	origEnsure := ensureRepoTargetPaths
-	origRun := runCommandInDir
-	defer func() {
-		promptRelativeRepoTargetPaths = origPrompt
-		ensureRepoTargetPaths = origEnsure
-		runCommandInDir = origRun
-	}()
+	testutil.SkipIfWindows(t)
 
-	const target = "/tmp/repo"
-	targetPaths := utils.RepoTargetPaths{
-		WorkingDir:        target,
-		AdditionalWorkDir: "/tmp/worktrees",
-		UsesWorktrees:     true,
-	}
-	var calls []invocation
+	rootDir := t.TempDir()
+	testutil.SetWorkingDir(t, rootDir)
+	testutil.SetStdin(t, "repo\n")
 
-	promptRelativeRepoTargetPaths = func(_ string, gitInitArgs []string, useWorktrees bool) (utils.RepoTargetPaths, error) {
-		if !useWorktrees {
-			t.Fatal("expected worktree layout to remain enabled")
-		}
-		if gitInitArgs != nil {
-			t.Fatalf("expected nil git init args, got %v", gitInitArgs)
-		}
-		return targetPaths, nil
-	}
-	ensureRepoTargetPaths = func(paths utils.RepoTargetPaths) error {
-		if paths != targetPaths {
-			t.Fatalf("ensureRepoTargetPaths got %#v, want %#v", paths, targetPaths)
-		}
-		return nil
-	}
-	runCommandInDir = func(dir string, name string, args ...string) error {
-		calls = append(calls, invocation{dir: dir, name: name, args: append([]string{}, args...)})
-		return nil
-	}
+	binDir := t.TempDir()
+	gitDirLog := filepath.Join(t.TempDir(), "git-dir.log")
+	gitArgsLog := filepath.Join(t.TempDir(), "git-args.log")
+	ghDirLog := filepath.Join(t.TempDir(), "gh-dir.log")
+	ghArgsLog := filepath.Join(t.TempDir(), "gh-args.log")
+	testutil.WriteExecutable(t, binDir, "git", fakeGitScript())
+	testutil.WriteExecutable(t, binDir, "gh", fakeGhScript())
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("FAKE_GIT_DIR_FILE", gitDirLog)
+	t.Setenv("FAKE_GIT_ARGS_FILE", gitArgsLog)
+	t.Setenv("FAKE_GH_DIR_FILE", ghDirLog)
+	t.Setenv("FAKE_GH_ARGS_FILE", ghArgsLog)
 
 	if err := run([]string{"my-repo", "--private"}); err != nil {
 		t.Fatalf("run returned error: %v", err)
 	}
 
-	if len(calls) != 2 {
-		t.Fatalf("expected 2 commands, got %d", len(calls))
+	wantDir := realPath(t, filepath.Join(rootDir, "repo", "trunk", "repo"))
+	if got := realPath(t, strings.TrimSpace(string(mustReadFile(t, gitDirLog)))); got != wantDir {
+		t.Fatalf("git ran in %q, want %q", got, wantDir)
+	}
+	if got := realPath(t, strings.TrimSpace(string(mustReadFile(t, ghDirLog)))); got != wantDir {
+		t.Fatalf("gh ran in %q, want %q", got, wantDir)
 	}
 
-	if calls[0].dir != target || calls[0].name != "git" {
-		t.Fatalf("first call mismatch: %#v", calls[0])
-	}
-	if len(calls[0].args) != 1 || calls[0].args[0] != "init" {
-		t.Fatalf("first call args mismatch: %v", calls[0].args)
-	}
-
-	if calls[1].dir != target || calls[1].name != "gh" {
-		t.Fatalf("second call mismatch: %#v", calls[1])
-	}
-	wantSecond := []string{"repo", "create", "my-repo", "--private"}
-	if len(calls[1].args) != len(wantSecond) {
-		t.Fatalf("second call args len mismatch: got %v want %v", calls[1].args, wantSecond)
-	}
-	for i := range wantSecond {
-		if calls[1].args[i] != wantSecond[i] {
-			t.Fatalf("second call arg mismatch at %d: got %q want %q", i, calls[1].args[i], wantSecond[i])
-		}
-	}
+	assertArgs(t, testutil.ReadLines(t, gitArgsLog), []string{"init"})
+	assertArgs(t, testutil.ReadLines(t, ghArgsLog), []string{"repo", "create", "my-repo", "--private"})
 }
 
-func TestRunAllowsSkippingWorktreeLayout(t *testing.T) {
-	origPrompt := promptRelativeRepoTargetPaths
-	origEnsure := ensureRepoTargetPaths
-	origRun := runCommandInDir
-	defer func() {
-		promptRelativeRepoTargetPaths = origPrompt
-		ensureRepoTargetPaths = origEnsure
-		runCommandInDir = origRun
-	}()
+func TestRunAllowsSkippingWorktreeSetup(t *testing.T) {
+	testutil.SkipIfWindows(t)
 
-	const target = "/tmp/repo"
-	targetPaths := utils.RepoTargetPaths{
-		WorkingDir:    target,
-		UsesWorktrees: false,
-	}
-	var calls []invocation
+	rootDir := t.TempDir()
+	testutil.SetWorkingDir(t, rootDir)
+	testutil.SetStdin(t, "repo\n")
 
-	promptRelativeRepoTargetPaths = func(_ string, gitInitArgs []string, useWorktrees bool) (utils.RepoTargetPaths, error) {
-		if useWorktrees {
-			t.Fatal("expected --no-worktree-setup to disable the worktree layout")
-		}
-		if gitInitArgs != nil {
-			t.Fatalf("expected nil git init args, got %v", gitInitArgs)
-		}
-		return targetPaths, nil
-	}
-	ensureRepoTargetPaths = func(paths utils.RepoTargetPaths) error {
-		if paths != targetPaths {
-			t.Fatalf("ensureRepoTargetPaths got %#v, want %#v", paths, targetPaths)
-		}
-		return nil
-	}
-	runCommandInDir = func(dir string, name string, args ...string) error {
-		calls = append(calls, invocation{dir: dir, name: name, args: append([]string{}, args...)})
-		return nil
-	}
+	binDir := t.TempDir()
+	gitDirLog := filepath.Join(t.TempDir(), "git-dir.log")
+	gitArgsLog := filepath.Join(t.TempDir(), "git-args.log")
+	ghDirLog := filepath.Join(t.TempDir(), "gh-dir.log")
+	ghArgsLog := filepath.Join(t.TempDir(), "gh-args.log")
+	testutil.WriteExecutable(t, binDir, "git", fakeGitScript())
+	testutil.WriteExecutable(t, binDir, "gh", fakeGhScript())
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("FAKE_GIT_DIR_FILE", gitDirLog)
+	t.Setenv("FAKE_GIT_ARGS_FILE", gitArgsLog)
+	t.Setenv("FAKE_GH_DIR_FILE", ghDirLog)
+	t.Setenv("FAKE_GH_ARGS_FILE", ghArgsLog)
 
 	if err := run([]string{"--no-worktree-setup", "my-repo", "--private"}); err != nil {
 		t.Fatalf("run returned error: %v", err)
 	}
 
-	if len(calls) != 2 {
-		t.Fatalf("expected 2 commands, got %d", len(calls))
+	wantDir := realPath(t, filepath.Join(rootDir, "repo"))
+	if got := realPath(t, strings.TrimSpace(string(mustReadFile(t, gitDirLog)))); got != wantDir {
+		t.Fatalf("git ran in %q, want %q", got, wantDir)
 	}
-	wantSecond := []string{"repo", "create", "my-repo", "--private"}
-	if len(calls[1].args) != len(wantSecond) {
-		t.Fatalf("second call args len mismatch: got %v want %v", calls[1].args, wantSecond)
+	if got := realPath(t, strings.TrimSpace(string(mustReadFile(t, ghDirLog)))); got != wantDir {
+		t.Fatalf("gh ran in %q, want %q", got, wantDir)
 	}
-	for i := range wantSecond {
-		if calls[1].args[i] != wantSecond[i] {
-			t.Fatalf("second call arg mismatch at %d: got %q want %q", i, calls[1].args[i], wantSecond[i])
-		}
-	}
+
+	assertArgs(t, testutil.ReadLines(t, gitArgsLog), []string{"init"})
+	assertArgs(t, testutil.ReadLines(t, ghArgsLog), []string{"repo", "create", "my-repo", "--private"})
 }
 
 func TestRunStopsIfGitInitFails(t *testing.T) {
-	origPrompt := promptRelativeRepoTargetPaths
-	origEnsure := ensureRepoTargetPaths
-	origRun := runCommandInDir
-	defer func() {
-		promptRelativeRepoTargetPaths = origPrompt
-		ensureRepoTargetPaths = origEnsure
-		runCommandInDir = origRun
-	}()
+	testutil.SkipIfWindows(t)
 
-	expectedErr := errors.New("git init failed")
-	const target = "/tmp/repo"
-	targetPaths := utils.RepoTargetPaths{
-		WorkingDir:        target,
-		AdditionalWorkDir: "/tmp/worktrees",
-		UsesWorktrees:     true,
-	}
-	var calls int
+	rootDir := t.TempDir()
+	testutil.SetWorkingDir(t, rootDir)
+	testutil.SetStdin(t, "repo\n")
 
-	promptRelativeRepoTargetPaths = func(_ string, _ []string, _ bool) (utils.RepoTargetPaths, error) {
-		return targetPaths, nil
-	}
-	ensureRepoTargetPaths = func(_ utils.RepoTargetPaths) error { return nil }
-	runCommandInDir = func(_ string, name string, _ ...string) error {
-		calls++
-		if name == "git" {
-			return expectedErr
-		}
-		return nil
-	}
+	binDir := t.TempDir()
+	gitDirLog := filepath.Join(t.TempDir(), "git-dir.log")
+	gitArgsLog := filepath.Join(t.TempDir(), "git-args.log")
+	ghDirLog := filepath.Join(t.TempDir(), "gh-dir.log")
+	testutil.WriteExecutable(t, binDir, "git", fakeGitScript())
+	testutil.WriteExecutable(t, binDir, "gh", fakeGhScript())
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("FAKE_GIT_DIR_FILE", gitDirLog)
+	t.Setenv("FAKE_GIT_ARGS_FILE", gitArgsLog)
+	t.Setenv("FAKE_GH_DIR_FILE", ghDirLog)
+	t.Setenv("FAKE_GIT_FAIL_ON", "init")
 
 	err := run([]string{"my-repo"})
-	if !errors.Is(err, expectedErr) {
-		t.Fatalf("expected git init error, got %v", err)
+	if err == nil {
+		t.Fatal("expected git init error")
 	}
-	if calls != 1 {
-		t.Fatalf("expected only git command to run, got %d calls", calls)
+	if !strings.Contains(err.Error(), "command failed: git init") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, statErr := os.Stat(ghDirLog); !os.IsNotExist(statErr) {
+		t.Fatalf("expected gh not to run, stat error: %v", statErr)
+	}
+}
+
+func fakeGitScript() string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+
+	return `#!/bin/sh
+if [ "$1" = "config" ] && [ "$2" = "--get" ] && [ "$3" = "init.defaultBranch" ]; then
+  printf '%s\n' "${FAKE_GIT_DEFAULT_BRANCH:-trunk}"
+  exit 0
+fi
+printf '%s\n' "$PWD" >"$FAKE_GIT_DIR_FILE"
+printf '%s\n' "$@" >"$FAKE_GIT_ARGS_FILE"
+if [ -n "${FAKE_GIT_FAIL_ON:-}" ] && [ "$1" = "$FAKE_GIT_FAIL_ON" ]; then
+  exit 1
+fi
+`
+}
+
+func fakeGhScript() string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+
+	return `#!/bin/sh
+printf '%s\n' "$PWD" >"$FAKE_GH_DIR_FILE"
+printf '%s\n' "$@" >"$FAKE_GH_ARGS_FILE"
+`
+}
+
+func mustReadFile(t *testing.T, path string) []byte {
+	t.Helper()
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read %q: %v", path, err)
+	}
+
+	return content
+}
+
+func realPath(t *testing.T, path string) string {
+	t.Helper()
+
+	resolved, err := filepath.EvalSymlinks(path)
+	if err == nil {
+		return resolved
+	}
+
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		t.Fatalf("failed to resolve path %q: %v", path, err)
+	}
+
+	return absolute
+}
+
+func assertArgs(t *testing.T, got []string, want []string) {
+	t.Helper()
+
+	if len(got) != len(want) {
+		t.Fatalf("arg length mismatch: got %v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("arg mismatch at %d: got %q want %q", i, got[i], want[i])
+		}
 	}
 }

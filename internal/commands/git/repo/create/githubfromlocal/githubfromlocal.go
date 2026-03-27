@@ -5,12 +5,6 @@ import (
 	"shw-cli/internal/utils"
 )
 
-var (
-	promptRelativeDir = utils.PromptRelativeDir
-	ensureExistingDir = utils.EnsureExistingDir
-	runCommandInDir   = utils.RunCommandInDir
-)
-
 func Command() *cli.Command {
 	return &cli.Command{
 		Name:        "githubfromlocal",
@@ -22,14 +16,14 @@ func Command() *cli.Command {
 }
 
 func run(args []string) error {
-	targetDir, err := promptRelativeDir("Relative directory path: ")
+	targetDir, err := utils.PromptRelativeDir("Relative directory path: ")
 	if err != nil {
 		return err
 	}
-	if err := ensureExistingDir(targetDir); err != nil {
+	if err := utils.EnsureExistingDir(targetDir); err != nil {
 		return err
 	}
 
 	ghArgs := append([]string{"repo", "create"}, args...)
-	return runCommandInDir(targetDir, "gh", ghArgs...)
+	return utils.RunCommandInDir(targetDir, "gh", ghArgs...)
 }

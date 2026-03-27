@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"shw-cli/internal/testutil"
 )
 
 func TestResolveRelativeDir(t *testing.T) {
@@ -30,25 +32,20 @@ func TestResolveRelativeDirRejectsEmpty(t *testing.T) {
 }
 
 func TestResolveRelativeRepoTargetPathsUsesDetectedDefaultBranch(t *testing.T) {
-	origDetect := detectGitDefaultBranch
-	defer func() {
-		detectGitDefaultBranch = origDetect
-	}()
-
-	detectGitDefaultBranch = func(args []string) (string, error) {
-		if len(args) != 1 || args[0] != "--bare" {
-			t.Fatalf("got git init args %v", args)
-		}
-		return "trunk", nil
+	rootDir := t.TempDir()
+	testutil.SetWorkingDir(t, rootDir)
+	workingDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
 	}
 
-	paths, err := ResolveRelativeRepoTargetPaths("tmp/repo", []string{"--bare"}, true)
+	paths, err := ResolveRelativeRepoTargetPaths("tmp/repo", []string{"--initial-branch", "trunk"}, true)
 	if err != nil {
 		t.Fatalf("ResolveRelativeRepoTargetPaths returned error: %v", err)
 	}
 
-	wantRoot := filepath.Join(mustGetwd(t), "tmp", "repo")
-	if paths.RepoRoot != wantRoot {
+	wantRoot := filepath.Join(workingDir, "tmp", "repo")
+	if realPath(t, paths.RepoRoot) != wantRoot {
 		t.Fatalf("RepoRoot got %q, want %q", paths.RepoRoot, wantRoot)
 	}
 	if paths.DefaultBranch != "trunk" {
@@ -68,13 +65,20 @@ func TestResolveRelativeRepoTargetPathsUsesDetectedDefaultBranch(t *testing.T) {
 }
 
 func TestResolveRelativeRepoTargetPathsWithoutWorktreesUsesRepoRoot(t *testing.T) {
+	rootDir := t.TempDir()
+	testutil.SetWorkingDir(t, rootDir)
+	workingDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+
 	paths, err := ResolveRelativeRepoTargetPaths("tmp/repo", []string{"--bare"}, false)
 	if err != nil {
 		t.Fatalf("ResolveRelativeRepoTargetPaths returned error: %v", err)
 	}
 
-	wantRoot := filepath.Join(mustGetwd(t), "tmp", "repo")
-	if paths.RepoRoot != wantRoot {
+	wantRoot := filepath.Join(workingDir, "tmp", "repo")
+	if realPath(t, paths.RepoRoot) != wantRoot {
 		t.Fatalf("RepoRoot got %q, want %q", paths.RepoRoot, wantRoot)
 	}
 	if paths.WorkingDir != wantRoot {
@@ -209,13 +213,18 @@ func TestEnsureExistingDirRequiresExistingDirectory(t *testing.T) {
 	}
 }
 
-func mustGetwd(t *testing.T) string {
+func realPath(t *testing.T, path string) string {
 	t.Helper()
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("failed to get working directory: %v", err)
+	resolved, err := filepath.EvalSymlinks(path)
+	if err == nil {
+		return resolved
 	}
 
-	return cwd
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		t.Fatalf("failed to resolve path %q: %v", path, err)
+	}
+
+	return absolute
 }

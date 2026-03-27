@@ -1,36 +1,35 @@
 package push
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"testing"
+
+	"shw-cli/internal/testutil"
+)
 
 func TestRunCallsGitPushWithUpstreamToHead(t *testing.T) {
-	origRun := runCommand
-	defer func() {
-		runCommand = origRun
-	}()
+	testutil.SkipIfWindows(t)
 
-	var gotName string
-	var gotArgs []string
-	runCommand = func(name string, args ...string) error {
-		gotName = name
-		gotArgs = append([]string{}, args...)
-		return nil
-	}
+	binDir := t.TempDir()
+	gitArgsLog := filepath.Join(t.TempDir(), "git-args.log")
+	testutil.WriteExecutable(t, binDir, "git", fakeGitScript())
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("FAKE_GIT_ARGS_FILE", gitArgsLog)
 
 	if err := run(nil); err != nil {
 		t.Fatalf("run returned error: %v", err)
 	}
 
-	if gotName != "git" {
-		t.Fatalf("run command got %q, want git", gotName)
-	}
-
 	want := []string{"push", "-u", "origin", "HEAD"}
-	if len(gotArgs) != len(want) {
-		t.Fatalf("run args len mismatch: got %v want %v", gotArgs, want)
+	got := testutil.ReadLines(t, gitArgsLog)
+	if len(got) != len(want) {
+		t.Fatalf("run args len mismatch: got %v want %v", got, want)
 	}
 	for i := range want {
-		if gotArgs[i] != want[i] {
-			t.Fatalf("run args mismatch at %d: got %q want %q", i, gotArgs[i], want[i])
+		if got[i] != want[i] {
+			t.Fatalf("run args mismatch at %d: got %q want %q", i, got[i], want[i])
 		}
 	}
 }
@@ -47,4 +46,14 @@ func TestCommandShape(t *testing.T) {
 	if cmd.Run == nil {
 		t.Fatal("expected Run handler")
 	}
+}
+
+func fakeGitScript() string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+
+	return `#!/bin/sh
+printf '%s\n' "$@" >"$FAKE_GIT_ARGS_FILE"
+`
 }

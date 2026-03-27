@@ -19,11 +19,6 @@ type RepoTargetPaths struct {
 	UsesWorktrees     bool
 }
 
-var (
-	getWorkingDir          = os.Getwd
-	detectGitDefaultBranch = DetectGitDefaultBranch
-)
-
 func PromptRelativeDir(prompt string) (string, error) {
 	fmt.Fprint(os.Stdout, prompt)
 
@@ -57,7 +52,7 @@ func ResolveRelativeDir(relativePath string) (string, error) {
 		return "", fmt.Errorf("directory path must be relative")
 	}
 
-	cwd, err := getWorkingDir()
+	cwd, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("failed to get working directory: %w", err)
 	}
@@ -79,7 +74,7 @@ func ResolveRelativeRepoTargetPaths(relativePath string, gitInitArgs []string, u
 		}, nil
 	}
 
-	defaultBranch, err := detectGitDefaultBranch(gitInitArgs)
+	defaultBranch, err := DetectGitDefaultBranch(gitInitArgs)
 	if err != nil {
 		return RepoTargetPaths{}, err
 	}
