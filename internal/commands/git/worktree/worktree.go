@@ -6,6 +6,12 @@ import (
 	"shw-cli/internal/cli"
 )
 
+var quietFlag = cli.Flag{
+	Long:        "quiet",
+	Short:       "q",
+	Description: "Print only the resulting path when supported",
+}
+
 func Command() *cli.Command {
 	worktree := &cli.Command{
 		Name:        "worktree",
@@ -18,8 +24,9 @@ func Command() *cli.Command {
 		"create",
 		"Create a worktree for a branch",
 		"Create a worktree for a branch in Steven's preferred layout",
-		"shw git worktree create <repo-dir> <branch-name>",
+		"shw git worktree create [flags] <repo-dir> <branch-name>",
 		runCreate,
+		quietFlag,
 	))
 	worktree.AddChild(newLeafCommand(
 		"list",
@@ -43,31 +50,33 @@ func Command() *cli.Command {
 		runCleanAll,
 	))
 	worktree.AddChild(newLeafCommand(
-		"switch",
+		"path",
 		"Print a worktree path",
 		"Resolve a named worktree in Steven's preferred layout and print its path for use with cd or as a workdir",
-		"shw git worktree switch <repo-dir> <name>",
-		runSwitch,
+		"shw git worktree path <repo-dir> <name>",
+		runPath,
 	))
 
 	return worktree
 }
 
-func newLeafCommand(name string, summary string, description string, usage string, run func(args []string) error) *cli.Command {
+func newLeafCommand(name string, summary string, description string, usage string, run func(args []string) error, flags ...cli.Flag) *cli.Command {
 	return &cli.Command{
 		Name:        name,
 		Summary:     summary,
 		Description: description,
 		Usage:       usage,
+		Flags:       flags,
 		Run:         run,
 	}
 }
 
 func runCreate(args []string) error {
+	quiet, args := cli.ConsumeBoolFlag(args, quietFlag)
 	if len(args) != 2 {
-		return fmt.Errorf("usage: shw git worktree create <repo-dir> <branch-name>")
+		return fmt.Errorf("usage: shw git worktree create [flags] <repo-dir> <branch-name>")
 	}
-	return Create(args[0], args[1])
+	return Create(args[0], args[1], quiet)
 }
 
 func runList(args []string) error {
@@ -91,9 +100,9 @@ func runCleanAll(args []string) error {
 	return CleanAll(args[0])
 }
 
-func runSwitch(args []string) error {
+func runPath(args []string) error {
 	if len(args) != 2 {
-		return fmt.Errorf("usage: shw git worktree switch <repo-dir> <name>")
+		return fmt.Errorf("usage: shw git worktree path <repo-dir> <name>")
 	}
-	return Switch(args[0], args[1])
+	return Path(args[0], args[1])
 }

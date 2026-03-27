@@ -24,13 +24,14 @@ Manage worktrees in the preferred repo layout with `shw git worktree`
 
 ```bash
 shw git worktree create /path/to/repo steven/add-worktree-commands
+shw git worktree create --quiet /path/to/repo steven/add-worktree-commands
 shw git worktree list /path/to/repo
 shw git worktree remove /path/to/repo steven/add-worktree-commands
 shw git worktree clean-all /path/to/repo
-cd "$(shw git worktree switch /path/to/repo steven--add-worktree-commands)"
+cd "$(shw git worktree path /path/to/repo steven--add-worktree-commands)"
 ```
 
-`switch` prints the resolved worktree path so it can be used as a shell target or as the working directory for later commands
+Use `path` to resolve an existing worktree path. Use `create --quiet` when you want only the created path without extra output
 
 ## Development
 

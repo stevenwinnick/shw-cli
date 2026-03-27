@@ -13,7 +13,7 @@ func TestCreateCreatesWorktreeInPreferredLayout(t *testing.T) {
 	fixture := setupRepoFixture(t)
 
 	var output bytes.Buffer
-	if err := create(fixture.mainDir, "steven/add-worktree-commands", &output); err != nil {
+	if err := create(fixture.mainDir, "steven/add-worktree-commands", false, &output); err != nil {
 		t.Fatalf("create returned error: %v", err)
 	}
 
@@ -32,6 +32,20 @@ func TestCreateCreatesWorktreeInPreferredLayout(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "Worktree created: "+resolvedWorktreePath) {
 		t.Fatalf("unexpected stdout: %q", output.String())
+	}
+}
+
+func TestCreateQuietPrintsOnlyCreatedPath(t *testing.T) {
+	fixture := setupRepoFixture(t)
+
+	var output bytes.Buffer
+	if err := create(fixture.mainDir, "steven/quiet-create", true, &output); err != nil {
+		t.Fatalf("create returned error: %v", err)
+	}
+
+	want := realPath(t, fixture.worktreePath("steven/quiet-create")) + "\n"
+	if output.String() != want {
+		t.Fatalf("stdout got %q, want %q", output.String(), want)
 	}
 }
 
@@ -201,7 +215,7 @@ func (f repoFixture) createWorktree(t *testing.T, branch string) string {
 	t.Helper()
 
 	var output bytes.Buffer
-	if err := create(f.mainDir, branch, &output); err != nil {
+	if err := create(f.mainDir, branch, false, &output); err != nil {
 		t.Fatalf("create returned error: %v", err)
 	}
 

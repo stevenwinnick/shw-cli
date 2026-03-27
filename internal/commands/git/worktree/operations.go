@@ -16,13 +16,13 @@ type entry struct {
 	Branch string
 }
 
-func Create(repoDir string, branchName string) error {
-	return create(repoDir, branchName, os.Stdout)
+func Create(repoDir string, branchName string, quiet bool) error {
+	return create(repoDir, branchName, quiet, os.Stdout)
 }
 
-func create(repoDir string, branchName string, stdout io.Writer) error {
+func create(repoDir string, branchName string, quiet bool, stdout io.Writer) error {
 	if strings.TrimSpace(repoDir) == "" || strings.TrimSpace(branchName) == "" {
-		return fmt.Errorf("usage: shw git worktree create <repo-dir> <branch-name>")
+		return fmt.Errorf("usage: shw git worktree create [flags] <repo-dir> <branch-name>")
 	}
 
 	repoRoot, repoName, err := repoDetails(repoDir)
@@ -49,6 +49,14 @@ func create(repoDir string, branchName string, stdout io.Writer) error {
 	worktreePath := filepath.Join(containerDir, "worktrees", worktreeDir, repoName)
 	if err := os.MkdirAll(filepath.Dir(worktreePath), 0o755); err != nil {
 		return fmt.Errorf("failed to create worktree parent directory %q: %w", filepath.Dir(worktreePath), err)
+	}
+
+	if quiet {
+		if _, err := utils.CaptureCommandInDir(repoRoot, "git", "worktree", "add", "-b", branchName, worktreePath, baseRef); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(stdout, worktreePath)
+		return err
 	}
 
 	if err := utils.RunCommandInDir(repoRoot, "git", "worktree", "add", "-b", branchName, worktreePath, baseRef); err != nil {
@@ -231,13 +239,13 @@ func cleanAll(repoDir string, stdout io.Writer) error {
 	return err
 }
 
-func Switch(repoDir string, name string) error {
+func Path(repoDir string, name string) error {
 	return switchTo(repoDir, name, os.Stdout)
 }
 
 func switchTo(repoDir string, name string, stdout io.Writer) error {
 	if strings.TrimSpace(repoDir) == "" || strings.TrimSpace(name) == "" {
-		return fmt.Errorf("usage: shw git worktree switch <repo-dir> <name>")
+		return fmt.Errorf("usage: shw git worktree path <repo-dir> <name>")
 	}
 
 	repoRoot, repoName, err := repoDetails(repoDir)
