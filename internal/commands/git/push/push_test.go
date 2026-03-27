@@ -1,37 +1,53 @@
 package push
 
-import "testing"
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func TestRunCallsGitPushWithUpstreamToHead(t *testing.T) {
-	origRun := runCommand
-	defer func() {
-		runCommand = origRun
-	}()
+	rootDir := t.TempDir()
+	remoteDir := filepath.Join(rootDir, "remote.git")
+	localDir := filepath.Join(rootDir, "local")
 
-	var gotName string
-	var gotArgs []string
-	runCommand = func(name string, args ...string) error {
-		gotName = name
-		gotArgs = append([]string{}, args...)
-		return nil
+	runGit(t, "", "init", "--bare", "--initial-branch", "trunk", remoteDir)
+	runGit(t, "", "init", "--initial-branch", "trunk", localDir)
+	runGit(t, localDir, "config", "user.name", "Test User")
+	runGit(t, localDir, "config", "user.email", "test@example.com")
+	if err := os.WriteFile(filepath.Join(localDir, "README.md"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("failed to write README: %v", err)
 	}
+	runGit(t, localDir, "add", "README.md")
+	runGit(t, localDir, "commit", "-m", "initial")
+	runGit(t, localDir, "remote", "add", "origin", remoteDir)
+
+	original, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+	if err := os.Chdir(localDir); err != nil {
+		t.Fatalf("failed to change working directory: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(original); err != nil {
+			t.Fatalf("failed to restore working directory: %v", err)
+		}
+	})
 
 	if err := run(nil); err != nil {
 		t.Fatalf("run returned error: %v", err)
 	}
 
-	if gotName != "git" {
-		t.Fatalf("run command got %q, want git", gotName)
+	upstream := strings.TrimSpace(string(runGit(t, localDir, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")))
+	if upstream != "origin/trunk" {
+		t.Fatalf("upstream got %q, want %q", upstream, "origin/trunk")
 	}
 
-	want := []string{"push", "-u", "origin", "HEAD"}
-	if len(gotArgs) != len(want) {
-		t.Fatalf("run args len mismatch: got %v want %v", gotArgs, want)
-	}
-	for i := range want {
-		if gotArgs[i] != want[i] {
-			t.Fatalf("run args mismatch at %d: got %q want %q", i, gotArgs[i], want[i])
-		}
+	if got := strings.TrimSpace(string(runGit(t, "", "--git-dir", remoteDir, "show-ref", "--verify", "--hash", "refs/heads/trunk"))); got == "" {
+		t.Fatal("expected remote trunk ref to exist after push")
 	}
 }
 
@@ -47,4 +63,19 @@ func TestCommandShape(t *testing.T) {
 	if cmd.Run == nil {
 		t.Fatal("expected Run handler")
 	}
+}
+
+func runGit(t *testing.T, dir string, args ...string) []byte {
+	t.Helper()
+
+	cmd := exec.Command("git", args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v\n%s", args, err, string(output))
+	}
+
+	return output
 }
