@@ -2,35 +2,52 @@ package push
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
-	"runtime"
+	"strings"
 	"testing"
-
-	"shw-cli/internal/testutil"
 )
 
 func TestRunCallsGitPushWithUpstreamToHead(t *testing.T) {
-	testutil.SkipIfWindows(t)
+	rootDir := t.TempDir()
+	remoteDir := filepath.Join(rootDir, "remote.git")
+	localDir := filepath.Join(rootDir, "local")
 
-	binDir := t.TempDir()
-	gitArgsLog := filepath.Join(t.TempDir(), "git-args.log")
-	testutil.WriteExecutable(t, binDir, "git", fakeGitScript())
-	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("FAKE_GIT_ARGS_FILE", gitArgsLog)
+	runGit(t, "", "init", "--bare", "--initial-branch", "trunk", remoteDir)
+	runGit(t, "", "init", "--initial-branch", "trunk", localDir)
+	runGit(t, localDir, "config", "user.name", "Test User")
+	runGit(t, localDir, "config", "user.email", "test@example.com")
+	if err := os.WriteFile(filepath.Join(localDir, "README.md"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("failed to write README: %v", err)
+	}
+	runGit(t, localDir, "add", "README.md")
+	runGit(t, localDir, "commit", "-m", "initial")
+	runGit(t, localDir, "remote", "add", "origin", remoteDir)
+
+	original, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+	if err := os.Chdir(localDir); err != nil {
+		t.Fatalf("failed to change working directory: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(original); err != nil {
+			t.Fatalf("failed to restore working directory: %v", err)
+		}
+	})
 
 	if err := run(nil); err != nil {
 		t.Fatalf("run returned error: %v", err)
 	}
 
-	want := []string{"push", "-u", "origin", "HEAD"}
-	got := testutil.ReadLines(t, gitArgsLog)
-	if len(got) != len(want) {
-		t.Fatalf("run args len mismatch: got %v want %v", got, want)
+	upstream := strings.TrimSpace(string(runGit(t, localDir, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")))
+	if upstream != "origin/trunk" {
+		t.Fatalf("upstream got %q, want %q", upstream, "origin/trunk")
 	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("run args mismatch at %d: got %q want %q", i, got[i], want[i])
-		}
+
+	if got := strings.TrimSpace(string(runGit(t, "", "--git-dir", remoteDir, "show-ref", "--verify", "--hash", "refs/heads/trunk"))); got == "" {
+		t.Fatal("expected remote trunk ref to exist after push")
 	}
 }
 
@@ -48,12 +65,17 @@ func TestCommandShape(t *testing.T) {
 	}
 }
 
-func fakeGitScript() string {
-	if runtime.GOOS == "windows" {
-		return ""
+func runGit(t *testing.T, dir string, args ...string) []byte {
+	t.Helper()
+
+	cmd := exec.Command("git", args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v\n%s", args, err, string(output))
 	}
 
-	return `#!/bin/sh
-printf '%s\n' "$@" >"$FAKE_GIT_ARGS_FILE"
-`
+	return output
 }
