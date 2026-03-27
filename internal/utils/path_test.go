@@ -29,7 +29,7 @@ func TestResolveRelativeDirRejectsEmpty(t *testing.T) {
 	}
 }
 
-func TestResolveRelativeNewRepoPathsUsesDetectedDefaultBranch(t *testing.T) {
+func TestResolveRelativeRepoTargetPathsUsesDetectedDefaultBranch(t *testing.T) {
 	origDetect := detectGitDefaultBranch
 	defer func() {
 		detectGitDefaultBranch = origDetect
@@ -42,9 +42,9 @@ func TestResolveRelativeNewRepoPathsUsesDetectedDefaultBranch(t *testing.T) {
 		return "trunk", nil
 	}
 
-	paths, err := ResolveRelativeNewRepoPaths("tmp/repo", []string{"--bare"})
+	paths, err := ResolveRelativeRepoTargetPaths("tmp/repo", []string{"--bare"}, true)
 	if err != nil {
-		t.Fatalf("ResolveRelativeNewRepoPaths returned error: %v", err)
+		t.Fatalf("ResolveRelativeRepoTargetPaths returned error: %v", err)
 	}
 
 	wantRoot := filepath.Join(mustGetwd(t), "tmp", "repo")
@@ -55,27 +55,54 @@ func TestResolveRelativeNewRepoPathsUsesDetectedDefaultBranch(t *testing.T) {
 		t.Fatalf("DefaultBranch got %q, want trunk", paths.DefaultBranch)
 	}
 	wantMain := filepath.Join(wantRoot, "trunk", "repo")
-	if paths.MainWorktreeDir != wantMain {
-		t.Fatalf("MainWorktreeDir got %q, want %q", paths.MainWorktreeDir, wantMain)
+	if paths.WorkingDir != wantMain {
+		t.Fatalf("WorkingDir got %q, want %q", paths.WorkingDir, wantMain)
 	}
 	wantWorktrees := filepath.Join(wantRoot, "worktrees")
-	if paths.WorktreesDir != wantWorktrees {
-		t.Fatalf("WorktreesDir got %q, want %q", paths.WorktreesDir, wantWorktrees)
+	if paths.AdditionalWorkDir != wantWorktrees {
+		t.Fatalf("AdditionalWorkDir got %q, want %q", paths.AdditionalWorkDir, wantWorktrees)
+	}
+	if !paths.UsesWorktrees {
+		t.Fatal("expected UsesWorktrees to be true")
 	}
 }
 
-func TestEnsureNewRepoLayoutCreatesMainAndWorktreesDirs(t *testing.T) {
+func TestResolveRelativeRepoTargetPathsWithoutWorktreesUsesRepoRoot(t *testing.T) {
+	paths, err := ResolveRelativeRepoTargetPaths("tmp/repo", []string{"--bare"}, false)
+	if err != nil {
+		t.Fatalf("ResolveRelativeRepoTargetPaths returned error: %v", err)
+	}
+
+	wantRoot := filepath.Join(mustGetwd(t), "tmp", "repo")
+	if paths.RepoRoot != wantRoot {
+		t.Fatalf("RepoRoot got %q, want %q", paths.RepoRoot, wantRoot)
+	}
+	if paths.WorkingDir != wantRoot {
+		t.Fatalf("WorkingDir got %q, want %q", paths.WorkingDir, wantRoot)
+	}
+	if paths.DefaultBranch != "" {
+		t.Fatalf("DefaultBranch got %q, want empty", paths.DefaultBranch)
+	}
+	if paths.AdditionalWorkDir != "" {
+		t.Fatalf("AdditionalWorkDir got %q, want empty", paths.AdditionalWorkDir)
+	}
+	if paths.UsesWorktrees {
+		t.Fatal("expected UsesWorktrees to be false")
+	}
+}
+
+func TestEnsureRepoTargetPathsCreatesWorkingAndAdditionalDirs(t *testing.T) {
 	parent := t.TempDir()
-	paths := NewRepoPaths{
-		MainWorktreeDir: filepath.Join(parent, "repo", "trunk", "repo"),
-		WorktreesDir:    filepath.Join(parent, "repo", "worktrees"),
+	paths := RepoTargetPaths{
+		WorkingDir:        filepath.Join(parent, "repo", "trunk", "repo"),
+		AdditionalWorkDir: filepath.Join(parent, "repo", "worktrees"),
 	}
 
-	if err := EnsureNewRepoLayout(paths); err != nil {
-		t.Fatalf("EnsureNewRepoLayout returned error: %v", err)
+	if err := EnsureRepoTargetPaths(paths); err != nil {
+		t.Fatalf("EnsureRepoTargetPaths returned error: %v", err)
 	}
 
-	for _, dir := range []string{paths.MainWorktreeDir, paths.WorktreesDir} {
+	for _, dir := range []string{paths.WorkingDir, paths.AdditionalWorkDir} {
 		info, err := os.Stat(dir)
 		if err != nil {
 			t.Fatalf("expected directory %q to exist: %v", dir, err)
@@ -83,6 +110,25 @@ func TestEnsureNewRepoLayoutCreatesMainAndWorktreesDirs(t *testing.T) {
 		if !info.IsDir() {
 			t.Fatalf("expected %q to be a directory", dir)
 		}
+	}
+}
+
+func TestEnsureRepoTargetPathsWithoutAdditionalDirCreatesOnlyWorkingDir(t *testing.T) {
+	parent := t.TempDir()
+	paths := RepoTargetPaths{
+		WorkingDir: filepath.Join(parent, "repo"),
+	}
+
+	if err := EnsureRepoTargetPaths(paths); err != nil {
+		t.Fatalf("EnsureRepoTargetPaths returned error: %v", err)
+	}
+
+	info, err := os.Stat(paths.WorkingDir)
+	if err != nil {
+		t.Fatalf("expected directory %q to exist: %v", paths.WorkingDir, err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("expected %q to be a directory", paths.WorkingDir)
 	}
 }
 

@@ -11,11 +11,12 @@ import (
 	"strings"
 )
 
-type NewRepoPaths struct {
-	RepoRoot        string
-	DefaultBranch   string
-	MainWorktreeDir string
-	WorktreesDir    string
+type RepoTargetPaths struct {
+	RepoRoot          string
+	DefaultBranch     string
+	WorkingDir        string
+	AdditionalWorkDir string
+	UsesWorktrees     bool
 }
 
 var (
@@ -35,16 +36,16 @@ func PromptRelativeDir(prompt string) (string, error) {
 	return ResolveRelativeDir(strings.TrimSpace(input))
 }
 
-func PromptRelativeNewRepoPaths(prompt string, gitInitArgs []string) (NewRepoPaths, error) {
+func PromptRelativeRepoTargetPaths(prompt string, gitInitArgs []string, useWorktrees bool) (RepoTargetPaths, error) {
 	fmt.Fprint(os.Stdout, prompt)
 
 	reader := bufio.NewReader(os.Stdin)
 	input, err := reader.ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
-		return NewRepoPaths{}, fmt.Errorf("failed to read input: %w", err)
+		return RepoTargetPaths{}, fmt.Errorf("failed to read input: %w", err)
 	}
 
-	return ResolveRelativeNewRepoPaths(strings.TrimSpace(input), gitInitArgs)
+	return ResolveRelativeRepoTargetPaths(strings.TrimSpace(input), gitInitArgs, useWorktrees)
 }
 
 func ResolveRelativeDir(relativePath string) (string, error) {
@@ -64,32 +65,44 @@ func ResolveRelativeDir(relativePath string) (string, error) {
 	return filepath.Join(cwd, filepath.Clean(cleaned)), nil
 }
 
-func ResolveRelativeNewRepoPaths(relativePath string, gitInitArgs []string) (NewRepoPaths, error) {
+func ResolveRelativeRepoTargetPaths(relativePath string, gitInitArgs []string, useWorktrees bool) (RepoTargetPaths, error) {
 	repoRoot, err := ResolveRelativeDir(relativePath)
 	if err != nil {
-		return NewRepoPaths{}, err
+		return RepoTargetPaths{}, err
+	}
+
+	if !useWorktrees {
+		return RepoTargetPaths{
+			RepoRoot:      repoRoot,
+			WorkingDir:    repoRoot,
+			UsesWorktrees: false,
+		}, nil
 	}
 
 	defaultBranch, err := detectGitDefaultBranch(gitInitArgs)
 	if err != nil {
-		return NewRepoPaths{}, err
+		return RepoTargetPaths{}, err
 	}
 
 	repoName := filepath.Base(repoRoot)
 
-	return NewRepoPaths{
-		RepoRoot:        repoRoot,
-		DefaultBranch:   defaultBranch,
-		MainWorktreeDir: filepath.Join(repoRoot, defaultBranch, repoName),
-		WorktreesDir:    filepath.Join(repoRoot, "worktrees"),
+	return RepoTargetPaths{
+		RepoRoot:          repoRoot,
+		DefaultBranch:     defaultBranch,
+		WorkingDir:        filepath.Join(repoRoot, defaultBranch, repoName),
+		AdditionalWorkDir: filepath.Join(repoRoot, "worktrees"),
+		UsesWorktrees:     true,
 	}, nil
 }
 
-func EnsureNewRepoLayout(paths NewRepoPaths) error {
-	if err := EnsureDir(paths.MainWorktreeDir); err != nil {
+func EnsureRepoTargetPaths(paths RepoTargetPaths) error {
+	if err := EnsureDir(paths.WorkingDir); err != nil {
 		return err
 	}
-	if err := EnsureDir(paths.WorktreesDir); err != nil {
+	if paths.AdditionalWorkDir == "" {
+		return nil
+	}
+	if err := EnsureDir(paths.AdditionalWorkDir); err != nil {
 		return err
 	}
 
