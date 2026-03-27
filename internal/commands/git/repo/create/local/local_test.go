@@ -3,32 +3,40 @@ package local
 import (
 	"errors"
 	"fmt"
+	"shw-cli/internal/utils"
 	"testing"
 )
 
 func TestRunUsesPromptEnsureAndGitInit(t *testing.T) {
-	origPrompt := promptRelativeDir
-	origEnsure := ensureDir
+	origPrompt := promptRelativeNewRepoPaths
+	origEnsure := ensureNewRepoLayout
 	origRun := runCommandInDir
 	defer func() {
-		promptRelativeDir = origPrompt
-		ensureDir = origEnsure
+		promptRelativeNewRepoPaths = origPrompt
+		ensureNewRepoLayout = origEnsure
 		runCommandInDir = origRun
 	}()
 
 	const target = "/tmp/repo"
+	targetPaths := utils.NewRepoPaths{
+		MainWorktreeDir: target,
+		WorktreesDir:    "/tmp/worktrees",
+	}
 	var gotPrompt string
-	var gotEnsure string
+	var gotEnsure utils.NewRepoPaths
 	var gotDir string
 	var gotName string
 	var gotArgs []string
 
-	promptRelativeDir = func(prompt string) (string, error) {
+	promptRelativeNewRepoPaths = func(prompt string, gitInitArgs []string) (utils.NewRepoPaths, error) {
 		gotPrompt = prompt
-		return target, nil
+		if len(gitInitArgs) != 1 || gitInitArgs[0] != "--bare" {
+			t.Fatalf("git init args mismatch: %v", gitInitArgs)
+		}
+		return targetPaths, nil
 	}
-	ensureDir = func(dir string) error {
-		gotEnsure = dir
+	ensureNewRepoLayout = func(paths utils.NewRepoPaths) error {
+		gotEnsure = paths
 		return nil
 	}
 	runCommandInDir = func(dir string, name string, args ...string) error {
@@ -45,8 +53,8 @@ func TestRunUsesPromptEnsureAndGitInit(t *testing.T) {
 	if gotPrompt == "" {
 		t.Fatal("expected prompt to be shown")
 	}
-	if gotEnsure != target {
-		t.Fatalf("ensureDir got %q, want %q", gotEnsure, target)
+	if gotEnsure != targetPaths {
+		t.Fatalf("ensureNewRepoLayout got %#v, want %#v", gotEnsure, targetPaths)
 	}
 	if gotDir != target {
 		t.Fatalf("run dir got %q, want %q", gotDir, target)
@@ -66,18 +74,20 @@ func TestRunUsesPromptEnsureAndGitInit(t *testing.T) {
 }
 
 func TestRunStopsOnPromptError(t *testing.T) {
-	origPrompt := promptRelativeDir
-	origEnsure := ensureDir
+	origPrompt := promptRelativeNewRepoPaths
+	origEnsure := ensureNewRepoLayout
 	origRun := runCommandInDir
 	defer func() {
-		promptRelativeDir = origPrompt
-		ensureDir = origEnsure
+		promptRelativeNewRepoPaths = origPrompt
+		ensureNewRepoLayout = origEnsure
 		runCommandInDir = origRun
 	}()
 
 	expectedErr := errors.New("prompt failed")
-	promptRelativeDir = func(_ string) (string, error) { return "", expectedErr }
-	ensureDir = func(_ string) error {
+	promptRelativeNewRepoPaths = func(_ string, _ []string) (utils.NewRepoPaths, error) {
+		return utils.NewRepoPaths{}, expectedErr
+	}
+	ensureNewRepoLayout = func(_ utils.NewRepoPaths) error {
 		return fmt.Errorf("should not be called")
 	}
 	runCommandInDir = func(_ string, _ string, _ ...string) error {

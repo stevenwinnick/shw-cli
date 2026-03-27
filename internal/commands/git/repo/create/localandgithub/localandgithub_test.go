@@ -2,6 +2,7 @@ package localandgithub
 
 import (
 	"errors"
+	"shw-cli/internal/utils"
 	"testing"
 )
 
@@ -12,22 +13,31 @@ type invocation struct {
 }
 
 func TestRunCallsGitThenGitHubInTargetDir(t *testing.T) {
-	origPrompt := promptRelativeDir
-	origEnsure := ensureDir
+	origPrompt := promptRelativeNewRepoPaths
+	origEnsure := ensureNewRepoLayout
 	origRun := runCommandInDir
 	defer func() {
-		promptRelativeDir = origPrompt
-		ensureDir = origEnsure
+		promptRelativeNewRepoPaths = origPrompt
+		ensureNewRepoLayout = origEnsure
 		runCommandInDir = origRun
 	}()
 
 	const target = "/tmp/repo"
+	targetPaths := utils.NewRepoPaths{
+		MainWorktreeDir: target,
+		WorktreesDir:    "/tmp/worktrees",
+	}
 	var calls []invocation
 
-	promptRelativeDir = func(_ string) (string, error) { return target, nil }
-	ensureDir = func(dir string) error {
-		if dir != target {
-			t.Fatalf("ensureDir got %q, want %q", dir, target)
+	promptRelativeNewRepoPaths = func(_ string, gitInitArgs []string) (utils.NewRepoPaths, error) {
+		if gitInitArgs != nil {
+			t.Fatalf("expected nil git init args, got %v", gitInitArgs)
+		}
+		return targetPaths, nil
+	}
+	ensureNewRepoLayout = func(paths utils.NewRepoPaths) error {
+		if paths != targetPaths {
+			t.Fatalf("ensureNewRepoLayout got %#v, want %#v", paths, targetPaths)
 		}
 		return nil
 	}
@@ -66,21 +76,27 @@ func TestRunCallsGitThenGitHubInTargetDir(t *testing.T) {
 }
 
 func TestRunStopsIfGitInitFails(t *testing.T) {
-	origPrompt := promptRelativeDir
-	origEnsure := ensureDir
+	origPrompt := promptRelativeNewRepoPaths
+	origEnsure := ensureNewRepoLayout
 	origRun := runCommandInDir
 	defer func() {
-		promptRelativeDir = origPrompt
-		ensureDir = origEnsure
+		promptRelativeNewRepoPaths = origPrompt
+		ensureNewRepoLayout = origEnsure
 		runCommandInDir = origRun
 	}()
 
 	expectedErr := errors.New("git init failed")
 	const target = "/tmp/repo"
+	targetPaths := utils.NewRepoPaths{
+		MainWorktreeDir: target,
+		WorktreesDir:    "/tmp/worktrees",
+	}
 	var calls int
 
-	promptRelativeDir = func(_ string) (string, error) { return target, nil }
-	ensureDir = func(_ string) error { return nil }
+	promptRelativeNewRepoPaths = func(_ string, _ []string) (utils.NewRepoPaths, error) {
+		return targetPaths, nil
+	}
+	ensureNewRepoLayout = func(_ utils.NewRepoPaths) error { return nil }
 	runCommandInDir = func(_ string, name string, _ ...string) error {
 		calls++
 		if name == "git" {
