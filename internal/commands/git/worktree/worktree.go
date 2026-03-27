@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"shw-cli/internal/cli"
-	wtmgr "shw-cli/internal/worktree"
 )
 
 func Command() *cli.Command {
@@ -68,33 +67,33 @@ func runCreate(args []string) error {
 	if len(args) != 2 {
 		return fmt.Errorf("usage: shw git worktree create <repo-dir> <branch-name>")
 	}
-	return wtmgr.Create(args[0], args[1])
+	return Create(args[0], args[1])
 }
 
 func runList(args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: shw git worktree list <repo-dir>")
 	}
-	return wtmgr.List(args[0])
+	return List(args[0])
 }
 
 func runRemove(args []string) error {
 	if len(args) != 2 {
 		return fmt.Errorf("usage: shw git worktree remove <repo-dir> <branch-name>")
 	}
-	return wtmgr.Remove(args[0], args[1])
+	return Remove(args[0], args[1])
 }
 
 func runCleanAll(args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: shw git worktree clean-all <repo-dir>")
 	}
-	return wtmgr.CleanAll(args[0])
+	return CleanAll(args[0])
 }
 
 func runSwitch(args []string) error {
 	if len(args) != 2 {
 		return fmt.Errorf("usage: shw git worktree switch <repo-dir> <name>")
 	}
-	return wtmgr.Switch(args[0], args[1])
+	return Switch(args[0], args[1])
 }
