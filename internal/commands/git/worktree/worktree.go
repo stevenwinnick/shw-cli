@@ -7,14 +7,6 @@ import (
 	wtmgr "shw-cli/internal/worktree"
 )
 
-var (
-	createWorktree   = wtmgr.Create
-	listWorktrees    = wtmgr.List
-	removeWorktree   = wtmgr.Remove
-	cleanAllWorktree = wtmgr.CleanAll
-	switchWorktree   = wtmgr.Switch
-)
-
 func Command() *cli.Command {
 	worktree := &cli.Command{
 		Name:        "worktree",
@@ -76,33 +68,33 @@ func runCreate(args []string) error {
 	if len(args) != 2 {
 		return fmt.Errorf("usage: shw git worktree create <repo-dir> <branch-name>")
 	}
-	return createWorktree(args[0], args[1])
+	return wtmgr.Create(args[0], args[1])
 }
 
 func runList(args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: shw git worktree list <repo-dir>")
 	}
-	return listWorktrees(args[0])
+	return wtmgr.List(args[0])
 }
 
 func runRemove(args []string) error {
 	if len(args) != 2 {
 		return fmt.Errorf("usage: shw git worktree remove <repo-dir> <branch-name>")
 	}
-	return removeWorktree(args[0], args[1])
+	return wtmgr.Remove(args[0], args[1])
 }
 
 func runCleanAll(args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: shw git worktree clean-all <repo-dir>")
 	}
-	return cleanAllWorktree(args[0])
+	return wtmgr.CleanAll(args[0])
 }
 
 func runSwitch(args []string) error {
 	if len(args) != 2 {
 		return fmt.Errorf("usage: shw git worktree switch <repo-dir> <name>")
 	}
-	return switchWorktree(args[0], args[1])
+	return wtmgr.Switch(args[0], args[1])
 }

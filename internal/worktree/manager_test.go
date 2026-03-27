@@ -2,351 +2,254 @@ package worktree
 
 import (
 	"bytes"
-	"errors"
-	"io/fs"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
-func TestCreateUsesPreferredLayout(t *testing.T) {
-	restore := stubEnvironment(t)
-	defer restore()
-
-	var mkdirPath string
-	mkdirAll = func(path string, _ fs.FileMode) error {
-		mkdirPath = path
-		return nil
-	}
-
-	var commandDir string
-	var commandName string
-	var commandArgs []string
-	runCommandInDir = func(dir string, name string, args ...string) error {
-		commandDir = dir
-		commandName = name
-		commandArgs = append([]string{}, args...)
-		return nil
-	}
-
-	captureCommandInDir = func(dir string, name string, args ...string) (string, error) {
-		switch key(append([]string{name}, args...)...) {
-		case key("git", "rev-parse", "--show-toplevel"):
-			return "/code/demo/trunk/demo\n", nil
-		case key("git", "worktree", "list", "--porcelain"):
-			return "worktree /code/demo/trunk/demo\nbranch refs/heads/trunk\n", nil
-		case key("git", "show-ref", "--verify", "refs/remotes/origin/trunk"):
-			return "sha refs/remotes/origin/trunk\n", nil
-		default:
-			return "", errors.New("unexpected command")
-		}
-	}
+func TestCreateCreatesWorktreeInPreferredLayout(t *testing.T) {
+	fixture := setupRepoFixture(t)
 
 	var output bytes.Buffer
-	stdout = &output
-
-	if err := Create("/code/demo/trunk/demo", "steven/add-worktree-commands"); err != nil {
-		t.Fatalf("Create returned error: %v", err)
+	if err := create(fixture.mainDir, "steven/add-worktree-commands", &output); err != nil {
+		t.Fatalf("create returned error: %v", err)
 	}
 
-	wantPath := "/code/demo/worktrees/steven--add-worktree-commands/demo"
-	if mkdirPath != filepath.Dir(wantPath) {
-		t.Fatalf("mkdir path = %q, want %q", mkdirPath, filepath.Dir(wantPath))
-	}
-	if commandDir != "/code/demo/trunk/demo" || commandName != "git" {
-		t.Fatalf("unexpected command invocation: dir=%q name=%q", commandDir, commandName)
+	worktreePath := fixture.worktreePath("steven/add-worktree-commands")
+	resolvedWorktreePath := realPath(t, worktreePath)
+	if info, err := os.Stat(worktreePath); err != nil || !info.IsDir() {
+		t.Fatalf("expected worktree directory %q to exist: %v", worktreePath, err)
 	}
 
-	wantArgs := []string{"worktree", "add", "-b", "steven/add-worktree-commands", wantPath, "origin/trunk"}
-	assertArgsEqual(t, commandArgs, wantArgs)
-	if !strings.Contains(output.String(), "Worktree created: "+wantPath) {
+	listing := runGit(t, fixture.mainDir, "worktree", "list", "--porcelain")
+	if !strings.Contains(listing, "worktree "+resolvedWorktreePath) {
+		t.Fatalf("worktree list missing path %q:\n%s", resolvedWorktreePath, listing)
+	}
+	if !strings.Contains(listing, "branch refs/heads/steven/add-worktree-commands") {
+		t.Fatalf("worktree list missing branch entry:\n%s", listing)
+	}
+	if !strings.Contains(output.String(), "Worktree created: "+resolvedWorktreePath) {
 		t.Fatalf("unexpected stdout: %q", output.String())
 	}
 }
 
-func TestListPrintsStatusesAndMarksMissingPaths(t *testing.T) {
-	restore := stubEnvironment(t)
-	defer restore()
+func TestListShowsStatusesAndMissingWorktrees(t *testing.T) {
+	fixture := setupRepoFixture(t)
 
-	var ranList bool
-	runCommandInDir = func(dir string, name string, args ...string) error {
-		if dir == "/code/demo/trunk/demo" && name == "git" && key(args...) == key("worktree", "list") {
-			ranList = true
-			return nil
-		}
-		return errors.New("unexpected command")
+	featurePath := fixture.createWorktree(t, "steven/feature")
+	missingPath := fixture.createWorktree(t, "steven/missing")
+
+	if err := os.WriteFile(filepath.Join(fixture.mainDir, "README.md"), []byte("updated\n"), 0o644); err != nil {
+		t.Fatalf("failed to update main README: %v", err)
 	}
-
-	captureCommandInDir = func(dir string, name string, args ...string) (string, error) {
-		switch {
-		case dir == "/code/demo/trunk/demo" && key(append([]string{name}, args...)...) == key("git", "rev-parse", "--show-toplevel"):
-			return "/code/demo/trunk/demo\n", nil
-		case dir == "/code/demo/trunk/demo" && key(append([]string{name}, args...)...) == key("git", "worktree", "list", "--porcelain"):
-			return "worktree /code/demo/trunk/demo\nbranch refs/heads/trunk\n\nworktree /code/demo/worktrees/steven--feature/demo\nbranch refs/heads/steven/feature\n", nil
-		case dir == "/code/demo/trunk/demo" && key(append([]string{name}, args...)...) == key("git", "status", "--short"):
-			return " M README.md\n", nil
-		case dir == "/code/demo/worktrees/steven--feature/demo" && key(append([]string{name}, args...)...) == key("git", "status", "--short"):
-			return "", nil
-		default:
-			return "", errors.New("unexpected command")
-		}
+	if err := os.WriteFile(filepath.Join(featurePath, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
+		t.Fatalf("failed to create feature file: %v", err)
 	}
-
-	stat = func(path string) (fs.FileInfo, error) {
-		if path == "/code/demo/trunk/demo" {
-			return fakeFileInfo{name: "demo", dir: true}, nil
-		}
-		return nil, errors.New("missing")
+	if err := os.RemoveAll(filepath.Dir(missingPath)); err != nil {
+		t.Fatalf("failed to remove missing worktree parent dir: %v", err)
 	}
 
 	var output bytes.Buffer
-	stdout = &output
-
-	if err := List("/code/demo/trunk/demo"); err != nil {
-		t.Fatalf("List returned error: %v", err)
-	}
-	if !ranList {
-		t.Fatal("expected git worktree list to run")
+	if err := list(fixture.mainDir, &output); err != nil {
+		t.Fatalf("list returned error: %v", err)
 	}
 
 	text := output.String()
-	if !strings.Contains(text, "/code/demo/trunk/demo:\n M README.md\n") {
-		t.Fatalf("missing main worktree status in output: %q", text)
+	if !strings.Contains(text, realPath(t, fixture.mainDir)+":\n M README.md\n") {
+		t.Fatalf("missing main worktree status in output:\n%s", text)
 	}
-	if !strings.Contains(text, "/code/demo/worktrees/steven--feature/demo:\n(not accessible)\n") {
-		t.Fatalf("missing inaccessible worktree marker in output: %q", text)
+	if !strings.Contains(text, realPath(t, featurePath)+":\n?? feature.txt\n") {
+		t.Fatalf("missing feature worktree status in output:\n%s", text)
+	}
+	if !strings.Contains(text, realPath(t, missingPath)+":\n(not accessible)\n") {
+		t.Fatalf("missing inaccessible worktree marker in output:\n%s", text)
 	}
 }
 
-func TestRemoveDeletesWorktreeDirectoryAndBranch(t *testing.T) {
-	restore := stubEnvironment(t)
-	defer restore()
-
-	var commands [][]string
-	runCommandInDir = func(dir string, name string, args ...string) error {
-		commands = append(commands, append([]string{dir, name}, args...))
-		return nil
-	}
-
-	captureCommandInDir = func(dir string, name string, args ...string) (string, error) {
-		switch key(append([]string{name}, args...)...) {
-		case key("git", "rev-parse", "--show-toplevel"):
-			return "/code/demo/trunk/demo\n", nil
-		case key("git", "worktree", "list", "--porcelain"):
-			return "worktree /code/demo/trunk/demo\nbranch refs/heads/trunk\n\nworktree /code/demo/worktrees/steven--feature/demo\nbranch refs/heads/steven/feature\n", nil
-		case key("git", "show-ref", "--verify", "refs/heads/steven/feature"):
-			return "sha refs/heads/steven/feature\n", nil
-		default:
-			return "", errors.New("unexpected command")
-		}
-	}
-
-	var removed string
-	removeAll = func(path string) error {
-		removed = path
-		return nil
-	}
-	stat = func(path string) (fs.FileInfo, error) {
-		return fakeFileInfo{name: filepath.Base(path), dir: true}, nil
-	}
+func TestRemoveDeletesWorktreeDirectoryAndLocalBranch(t *testing.T) {
+	fixture := setupRepoFixture(t)
+	worktreePath := fixture.createWorktree(t, "steven/feature")
 
 	var output bytes.Buffer
-	stdout = &output
-
-	if err := Remove("/code/demo/trunk/demo", "steven/feature"); err != nil {
-		t.Fatalf("Remove returned error: %v", err)
+	if err := remove(fixture.mainDir, "steven/feature", &output); err != nil {
+		t.Fatalf("remove returned error: %v", err)
 	}
 
-	if removed != "/code/demo/worktrees/steven--feature" {
-		t.Fatalf("removed path = %q, want parent worktree dir", removed)
+	if _, err := os.Stat(filepath.Dir(worktreePath)); !os.IsNotExist(err) {
+		t.Fatalf("expected worktree parent directory to be removed, got err=%v", err)
 	}
-
-	if len(commands) != 2 {
-		t.Fatalf("unexpected command count: %v", commands)
+	if got := strings.TrimSpace(runGitAllowFailure(t, fixture.mainDir, "branch", "--list", "steven/feature")); got != "" {
+		t.Fatalf("expected local branch to be deleted, got %q", got)
 	}
-	assertArgsEqual(t, commands[0], []string{"/code/demo/trunk/demo", "git", "worktree", "remove", "--force", "/code/demo/worktrees/steven--feature/demo"})
-	assertArgsEqual(t, commands[1], []string{"/code/demo/trunk/demo", "git", "branch", "-D", "steven/feature"})
+	if strings.Contains(runGit(t, fixture.mainDir, "worktree", "list", "--porcelain"), "steven/feature") {
+		t.Fatalf("expected worktree to be removed from git worktree list")
+	}
 	if !strings.Contains(output.String(), "Worktree removed successfully") {
 		t.Fatalf("unexpected stdout: %q", output.String())
 	}
 }
 
-func TestCleanAllRemovesBranchesMissingRemoteTrackingRefs(t *testing.T) {
-	restore := stubEnvironment(t)
-	defer restore()
+func TestCleanAllRemovesOnlyBranchesMissingRemoteTrackingRefs(t *testing.T) {
+	fixture := setupRepoFixture(t)
+	stalePath := fixture.createWorktree(t, "steven/stale")
+	keptPath := fixture.createWorktree(t, "steven/kept")
 
-	var commands [][]string
-	runCommandInDir = func(dir string, name string, args ...string) error {
-		commands = append(commands, append([]string{dir, name}, args...))
-		return nil
-	}
-
-	captureCommandInDir = func(dir string, name string, args ...string) (string, error) {
-		switch key(append([]string{name}, args...)...) {
-		case key("git", "rev-parse", "--show-toplevel"):
-			return "/code/demo/trunk/demo\n", nil
-		case key("git", "worktree", "list", "--porcelain"):
-			return "worktree /code/demo/trunk/demo\nbranch refs/heads/trunk\n\nworktree /code/demo/worktrees/steven--stale/demo\nbranch refs/heads/steven/stale\n\nworktree /code/demo/worktrees/steven--kept/demo\nbranch refs/heads/steven/kept\n", nil
-		case key("git", "show-ref", "--verify", "refs/remotes/origin/steven/stale"):
-			return "", errors.New("missing")
-		case key("git", "show-ref", "--verify", "refs/remotes/origin/steven/kept"):
-			return "sha refs/remotes/origin/steven/kept\n", nil
-		default:
-			return "", errors.New("unexpected command")
-		}
-	}
-
-	var removed []string
-	removeAll = func(path string) error {
-		removed = append(removed, path)
-		return nil
-	}
+	runGit(t, keptPath, "push", "-u", "origin", "HEAD")
 
 	var output bytes.Buffer
-	stdout = &output
-
-	if err := CleanAll("/code/demo/trunk/demo"); err != nil {
-		t.Fatalf("CleanAll returned error: %v", err)
+	if err := cleanAll(fixture.mainDir, &output); err != nil {
+		t.Fatalf("cleanAll returned error: %v", err)
 	}
 
-	if len(commands) != 3 {
-		t.Fatalf("unexpected command count: %v", commands)
+	if _, err := os.Stat(filepath.Dir(stalePath)); !os.IsNotExist(err) {
+		t.Fatalf("expected stale worktree parent directory to be removed, got err=%v", err)
 	}
-	assertArgsEqual(t, commands[0], []string{"/code/demo/trunk/demo", "git", "worktree", "prune"})
-	assertArgsEqual(t, commands[1], []string{"/code/demo/trunk/demo", "git", "worktree", "remove", "--force", "/code/demo/worktrees/steven--stale/demo"})
-	assertArgsEqual(t, commands[2], []string{"/code/demo/trunk/demo", "git", "branch", "-D", "steven/stale"})
-	if len(removed) != 1 || removed[0] != "/code/demo/worktrees/steven--stale" {
-		t.Fatalf("unexpected removed directories: %v", removed)
+	if _, err := os.Stat(keptPath); err != nil {
+		t.Fatalf("expected kept worktree to remain, got err=%v", err)
 	}
-	if !strings.Contains(output.String(), "Worktree cleanup complete") {
+	if got := strings.TrimSpace(runGitAllowFailure(t, fixture.mainDir, "branch", "--list", "steven/stale")); got != "" {
+		t.Fatalf("expected stale branch to be deleted, got %q", got)
+	}
+	if got := strings.TrimSpace(runGit(t, fixture.mainDir, "branch", "--list", "steven/kept")); got == "" {
+		t.Fatal("expected kept branch to remain")
+	}
+	if !strings.Contains(output.String(), "branch 'steven/stale' not on remote") {
 		t.Fatalf("unexpected stdout: %q", output.String())
 	}
 }
 
 func TestSwitchPrintsResolvedPath(t *testing.T) {
-	restore := stubEnvironment(t)
-	defer restore()
-
-	captureCommandInDir = func(dir string, name string, args ...string) (string, error) {
-		if key(append([]string{name}, args...)...) == key("git", "rev-parse", "--show-toplevel") {
-			return "/code/demo/trunk/demo\n", nil
-		}
-		return "", errors.New("unexpected command")
-	}
-	stat = func(path string) (fs.FileInfo, error) {
-		return fakeFileInfo{name: filepath.Base(path), dir: true}, nil
-	}
+	fixture := setupRepoFixture(t)
+	worktreePath := fixture.createWorktree(t, "steven/feature")
 
 	var output bytes.Buffer
-	stdout = &output
-
-	if err := Switch("/code/demo/trunk/demo", "steven--feature"); err != nil {
-		t.Fatalf("Switch returned error: %v", err)
+	if err := switchTo(fixture.mainDir, "steven--feature", &output); err != nil {
+		t.Fatalf("switchTo returned error: %v", err)
 	}
 
-	if output.String() != "/code/demo/worktrees/steven--feature/demo\n" {
-		t.Fatalf("unexpected stdout: %q", output.String())
+	want := realPath(t, worktreePath) + "\n"
+	if output.String() != want {
+		t.Fatalf("stdout got %q, want %q", output.String(), want)
 	}
 }
 
-func TestSwitchListsAvailableNamesWhenMissing(t *testing.T) {
-	restore := stubEnvironment(t)
-	defer restore()
+func TestSwitchListsAvailableNamesWhenTargetIsMissing(t *testing.T) {
+	fixture := setupRepoFixture(t)
+	fixture.createWorktree(t, "steven/feature")
 
-	captureCommandInDir = func(dir string, name string, args ...string) (string, error) {
-		if key(append([]string{name}, args...)...) == key("git", "rev-parse", "--show-toplevel") {
-			return "/code/demo/trunk/demo\n", nil
-		}
-		return "", errors.New("unexpected command")
-	}
-	stat = func(path string) (fs.FileInfo, error) {
-		return nil, errors.New("missing")
-	}
-	readDir = func(path string) ([]fs.DirEntry, error) {
-		return []fs.DirEntry{
-			fakeDirEntry{name: "steven--feature", dir: true},
-			fakeDirEntry{name: "steven--bugfix", dir: true},
-		}, nil
-	}
-
-	err := Switch("/code/demo/trunk/demo", "missing")
+	err := switchTo(fixture.mainDir, "missing", &bytes.Buffer{})
 	if err == nil {
-		t.Fatal("expected error for missing worktree")
+		t.Fatal("expected missing worktree error")
 	}
-	if !strings.Contains(err.Error(), "steven--feature, steven--bugfix") {
-		t.Fatalf("unexpected error: %v", err)
+	if !strings.Contains(err.Error(), "steven--feature") {
+		t.Fatalf("error got %q, want available worktree name", err.Error())
 	}
 }
 
-func stubEnvironment(t *testing.T) func() {
+type repoFixture struct {
+	repoName      string
+	containerDir  string
+	mainDir       string
+	remoteDir     string
+	defaultBranch string
+}
+
+func setupRepoFixture(t *testing.T) repoFixture {
 	t.Helper()
 
-	origRun := runCommandInDir
-	origCapture := captureCommandInDir
-	origStdout := stdout
-	origStat := stat
-	origMkdirAll := mkdirAll
-	origRemoveAll := removeAll
-	origReadDir := readDir
-	origGetenv := getenv
+	rootDir := t.TempDir()
+	repoName := "demo"
+	containerDir := filepath.Join(rootDir, repoName)
+	mainDir := filepath.Join(containerDir, "trunk", repoName)
+	remoteDir := filepath.Join(rootDir, "remote", repoName+".git")
 
-	runCommandInDir = func(string, string, ...string) error { return nil }
-	captureCommandInDir = func(string, string, ...string) (string, error) { return "", nil }
-	stdout = &bytes.Buffer{}
-	stat = func(path string) (fs.FileInfo, error) { return fakeFileInfo{name: filepath.Base(path), dir: true}, nil }
-	mkdirAll = func(string, fs.FileMode) error { return nil }
-	removeAll = func(string) error { return nil }
-	readDir = func(string) ([]fs.DirEntry, error) { return nil, nil }
-	getenv = func(string) string { return "" }
+	if err := os.MkdirAll(mainDir, 0o755); err != nil {
+		t.Fatalf("failed to create main dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(remoteDir), 0o755); err != nil {
+		t.Fatalf("failed to create remote parent dir: %v", err)
+	}
 
-	return func() {
-		runCommandInDir = origRun
-		captureCommandInDir = origCapture
-		stdout = origStdout
-		stat = origStat
-		mkdirAll = origMkdirAll
-		removeAll = origRemoveAll
-		readDir = origReadDir
-		getenv = origGetenv
+	runGit(t, "", "init", "--bare", "--initial-branch", "trunk", remoteDir)
+	runGit(t, "", "init", "--initial-branch", "trunk", mainDir)
+	runGit(t, mainDir, "config", "user.name", "Test User")
+	runGit(t, mainDir, "config", "user.email", "test@example.com")
+	if err := os.WriteFile(filepath.Join(mainDir, "README.md"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("failed to write README: %v", err)
+	}
+	runGit(t, mainDir, "add", "README.md")
+	runGit(t, mainDir, "commit", "-m", "initial")
+	runGit(t, mainDir, "remote", "add", "origin", remoteDir)
+	runGit(t, mainDir, "push", "-u", "origin", "trunk")
+
+	return repoFixture{
+		repoName:      repoName,
+		containerDir:  containerDir,
+		mainDir:       mainDir,
+		remoteDir:     remoteDir,
+		defaultBranch: "trunk",
 	}
 }
 
-func assertArgsEqual(t *testing.T, got []string, want []string) {
+func (f repoFixture) worktreePath(branch string) string {
+	return filepath.Join(f.containerDir, "worktrees", strings.ReplaceAll(branch, "/", "--"), f.repoName)
+}
+
+func (f repoFixture) createWorktree(t *testing.T, branch string) string {
 	t.Helper()
 
-	if len(got) != len(want) {
-		t.Fatalf("arg len mismatch: got %v want %v", got, want)
+	var output bytes.Buffer
+	if err := create(f.mainDir, branch, &output); err != nil {
+		t.Fatalf("create returned error: %v", err)
 	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("arg mismatch at %d: got %q want %q", i, got[i], want[i])
-		}
+
+	return f.worktreePath(branch)
+}
+
+func runGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+
+	cmd := exec.Command("git", args...)
+	if dir != "" {
+		cmd.Dir = dir
 	}
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v\n%s", args, err, string(output))
+	}
+
+	return string(output)
 }
 
-func key(parts ...string) string {
-	return strings.Join(parts, "\x00")
+func runGitAllowFailure(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+
+	cmd := exec.Command("git", args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(output)
+	}
+
+	return string(output)
 }
 
-type fakeFileInfo struct {
-	name string
-	dir  bool
+func realPath(t *testing.T, path string) string {
+	t.Helper()
+
+	resolved, err := filepath.EvalSymlinks(path)
+	if err == nil {
+		return resolved
+	}
+
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		t.Fatalf("failed to resolve path %q: %v", path, err)
+	}
+
+	return absolute
 }
-
-func (f fakeFileInfo) Name() string       { return f.name }
-func (f fakeFileInfo) Size() int64        { return 0 }
-func (f fakeFileInfo) Mode() fs.FileMode  { return 0o755 }
-func (f fakeFileInfo) ModTime() time.Time { return time.Time{} }
-func (f fakeFileInfo) IsDir() bool        { return f.dir }
-func (f fakeFileInfo) Sys() any           { return nil }
-
-type fakeDirEntry struct {
-	name string
-	dir  bool
-}
-
-func (f fakeDirEntry) Name() string               { return f.name }
-func (f fakeDirEntry) IsDir() bool                { return f.dir }
-func (f fakeDirEntry) Type() fs.FileMode          { return 0 }
-func (f fakeDirEntry) Info() (fs.FileInfo, error) { return fakeFileInfo{name: f.name, dir: f.dir}, nil }
