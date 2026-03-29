@@ -35,6 +35,44 @@ func TestCreateCreatesWorktreeInPreferredLayout(t *testing.T) {
 	}
 }
 
+func TestCommandsAcceptRepoContainerDir(t *testing.T) {
+	fixture := setupRepoFixture(t)
+
+	var createOutput bytes.Buffer
+	if err := create(fixture.containerDir, "steven/container-path", true, &createOutput); err != nil {
+		t.Fatalf("create returned error: %v", err)
+	}
+
+	worktreePath := realPath(t, fixture.worktreePath("steven/container-path"))
+	if createOutput.String() != worktreePath+"\n" {
+		t.Fatalf("create stdout got %q, want %q", createOutput.String(), worktreePath+"\n")
+	}
+
+	var pathOutput bytes.Buffer
+	if err := switchTo(fixture.containerDir, "steven--container-path", &pathOutput); err != nil {
+		t.Fatalf("switchTo returned error: %v", err)
+	}
+	if pathOutput.String() != worktreePath+"\n" {
+		t.Fatalf("path stdout got %q, want %q", pathOutput.String(), worktreePath+"\n")
+	}
+
+	var listOutput bytes.Buffer
+	if err := list(fixture.containerDir, &listOutput); err != nil {
+		t.Fatalf("list returned error: %v", err)
+	}
+	if !strings.Contains(listOutput.String(), worktreePath+":\n") {
+		t.Fatalf("list output missing worktree path:\n%s", listOutput.String())
+	}
+
+	var removeOutput bytes.Buffer
+	if err := remove(fixture.containerDir, "steven/container-path", &removeOutput); err != nil {
+		t.Fatalf("remove returned error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Dir(worktreePath)); !os.IsNotExist(err) {
+		t.Fatalf("expected worktree parent directory to be removed, got err=%v", err)
+	}
+}
+
 func TestCreateQuietPrintsOnlyCreatedPath(t *testing.T) {
 	fixture := setupRepoFixture(t)
 

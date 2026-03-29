@@ -285,17 +285,66 @@ func repoDetails(repoDir string) (string, string, error) {
 		return "", "", fmt.Errorf("failed to resolve repo dir %q: %w", repoDir, err)
 	}
 
-	repoRoot, err := utils.CaptureCommandInDir(absoluteRepoDir, "git", "rev-parse", "--show-toplevel")
+	if repoRoot, err := resolveGitTopLevel(absoluteRepoDir); err == nil {
+		return repoRoot, filepath.Base(repoRoot), nil
+	}
+
+	repoRoot, err := resolveRepoRootFromContainer(absoluteRepoDir)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to resolve git repo from %q: %w", repoDir, err)
 	}
 
-	repoRoot = strings.TrimSpace(repoRoot)
-	if repoRoot == "" {
-		return "", "", fmt.Errorf("failed to resolve git repo from %q", repoDir)
+	return repoRoot, filepath.Base(repoRoot), nil
+}
+
+func resolveGitTopLevel(dir string) (string, error) {
+	repoRoot, err := utils.CaptureCommandInDir(dir, "git", "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", err
 	}
 
-	return repoRoot, filepath.Base(repoRoot), nil
+	repoRoot = strings.TrimSpace(repoRoot)
+	if repoRoot == "" {
+		return "", fmt.Errorf("resolved git repo root is empty")
+	}
+
+	return repoRoot, nil
+}
+
+func resolveRepoRootFromContainer(containerDir string) (string, error) {
+	repoName := filepath.Base(containerDir)
+	dirEntries, err := os.ReadDir(containerDir)
+	if err != nil {
+		return "", err
+	}
+
+	var candidates []string
+	for _, dirEntry := range dirEntries {
+		if !dirEntry.IsDir() || dirEntry.Name() == "worktrees" {
+			continue
+		}
+
+		candidate := filepath.Join(containerDir, dirEntry.Name(), repoName)
+		if _, err := os.Stat(candidate); err != nil {
+			continue
+		}
+
+		repoRoot, err := resolveGitTopLevel(candidate)
+		if err != nil {
+			continue
+		}
+
+		candidates = append(candidates, repoRoot)
+	}
+
+	switch len(candidates) {
+	case 0:
+		return "", fmt.Errorf("not a git repo or recognized repo container")
+	case 1:
+		return candidates[0], nil
+	default:
+		return "", fmt.Errorf("multiple repo roots found under %q", containerDir)
+	}
 }
 
 func repoContainerDir(repoRoot string, repoName string) (string, error) {
