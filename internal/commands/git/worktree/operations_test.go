@@ -126,6 +126,24 @@ func TestRemoveDeletesWorktreeDirectoryAndLocalBranch(t *testing.T) {
 	}
 }
 
+func TestRemoveDoesNotDeleteParentDirectoryForNonPreferredLayoutWorktree(t *testing.T) {
+	fixture := setupRepoFixture(t)
+	worktreePath := fixture.createExternalWorktree(t, "steven/external-remove")
+	parentDir := filepath.Dir(worktreePath)
+
+	var output bytes.Buffer
+	if err := remove(fixture.mainDir, "steven/external-remove", &output, io.Discard); err != nil {
+		t.Fatalf("remove returned error: %v", err)
+	}
+
+	if _, err := os.Stat(parentDir); err != nil {
+		t.Fatalf("expected non-preferred parent directory to remain, got err=%v", err)
+	}
+	if strings.Contains(output.String(), "Removing directory: "+parentDir) {
+		t.Fatalf("unexpected parent directory removal output: %q", output.String())
+	}
+}
+
 func TestCleanAllRemovesOnlyBranchesMissingRemoteTrackingRefs(t *testing.T) {
 	fixture := setupRepoFixture(t)
 	stalePath := fixture.createWorktree(t, "steven/stale")
@@ -155,12 +173,45 @@ func TestCleanAllRemovesOnlyBranchesMissingRemoteTrackingRefs(t *testing.T) {
 	}
 }
 
+func TestCleanAllDoesNotDeleteParentDirectoryForNonPreferredLayoutWorktree(t *testing.T) {
+	fixture := setupRepoFixture(t)
+	stalePath := fixture.createExternalWorktree(t, "steven/external-stale")
+	parentDir := filepath.Dir(stalePath)
+
+	var output bytes.Buffer
+	if err := cleanAll(fixture.mainDir, &output, io.Discard); err != nil {
+		t.Fatalf("cleanAll returned error: %v", err)
+	}
+
+	if _, err := os.Stat(parentDir); err != nil {
+		t.Fatalf("expected non-preferred parent directory to remain, got err=%v", err)
+	}
+	if got := strings.TrimSpace(runGitAllowFailure(t, fixture.mainDir, "branch", "--list", "steven/external-stale")); got != "" {
+		t.Fatalf("expected stale branch to be deleted, got %q", got)
+	}
+}
+
 func TestSwitchPrintsResolvedPath(t *testing.T) {
 	fixture := setupRepoFixture(t)
 	worktreePath := fixture.createWorktree(t, "steven/feature")
 
 	var output bytes.Buffer
 	if err := switchTo(fixture.mainDir, "steven/feature", &output); err != nil {
+		t.Fatalf("switchTo returned error: %v", err)
+	}
+
+	want := realPath(t, worktreePath) + "\n"
+	if output.String() != want {
+		t.Fatalf("stdout got %q, want %q", output.String(), want)
+	}
+}
+
+func TestSwitchPrintsActualPathForNonPreferredLayoutWorktree(t *testing.T) {
+	fixture := setupRepoFixture(t)
+	worktreePath := fixture.createExternalWorktree(t, "steven/external-path")
+
+	var output bytes.Buffer
+	if err := switchTo(fixture.mainDir, "steven/external-path", &output); err != nil {
 		t.Fatalf("switchTo returned error: %v", err)
 	}
 
@@ -271,6 +322,18 @@ func (f repoFixture) createWorktree(t *testing.T, branch string) string {
 	}
 
 	return f.worktreePath(branch)
+}
+
+func (f repoFixture) createExternalWorktree(t *testing.T, branch string) string {
+	t.Helper()
+
+	worktreePath := filepath.Join(t.TempDir(), "external-worktrees", strings.ReplaceAll(branch, "/", "--"), f.repoName)
+	if err := os.MkdirAll(filepath.Dir(worktreePath), 0o755); err != nil {
+		t.Fatalf("failed to create external worktree parent dir: %v", err)
+	}
+
+	runGit(t, f.mainDir, "worktree", "add", "-b", branch, worktreePath, f.defaultBranch)
+	return worktreePath
 }
 
 func (f repoFixture) advanceDefaultBranchOnRemote(t *testing.T) {

@@ -95,7 +95,7 @@ func remove(repoDir string, branchName string, stdout io.Writer, stderr io.Write
 		return fmt.Errorf("usage: shw git worktree remove [flags] <branch-name>")
 	}
 
-	repoRoot, _, err := repoDetails(repoDir)
+	repoRoot, repoName, err := repoDetails(repoDir)
 	if err != nil {
 		return err
 	}
@@ -105,15 +105,16 @@ func remove(repoDir string, branchName string, stdout io.Writer, stderr io.Write
 		return err
 	}
 
-	worktreePath := ""
+	var targetEntry *entry
 	for _, entry := range entries {
 		if entry.Branch == branchName {
-			worktreePath = entry.Path
+			entryCopy := entry
+			targetEntry = &entryCopy
 			break
 		}
 	}
 
-	if worktreePath == "" {
+	if targetEntry == nil {
 		listOutput, listErr := utils.CaptureCommandInDir(repoRoot, "git", "worktree", "list")
 		if listErr != nil {
 			return fmt.Errorf("no worktree found for branch %q", branchName)
@@ -121,17 +122,19 @@ func remove(repoDir string, branchName string, stdout io.Writer, stderr io.Write
 		return fmt.Errorf("no worktree found for branch %q\n\nAvailable worktrees:\n%s", branchName, strings.TrimSpace(listOutput))
 	}
 
-	if err := utils.RunCommandInDirWithWriters(repoRoot, stdout, stderr, "git", "worktree", "remove", "--force", worktreePath); err != nil {
+	if err := utils.RunCommandInDirWithWriters(repoRoot, stdout, stderr, "git", "worktree", "remove", "--force", targetEntry.Path); err != nil {
 		return err
 	}
 
-	parentDir := filepath.Dir(worktreePath)
-	if _, err := os.Stat(parentDir); err == nil {
-		if _, err := fmt.Fprintf(stdout, "Removing directory: %s\n", parentDir); err != nil {
-			return err
-		}
-		if err := os.RemoveAll(parentDir); err != nil {
-			return fmt.Errorf("failed to remove directory %q: %w", parentDir, err)
+	parentDir := filepath.Dir(targetEntry.Path)
+	if isPreferredLayoutWorktreePath(targetEntry.Path, repoName) {
+		if _, err := os.Stat(parentDir); err == nil {
+			if _, err := fmt.Fprintf(stdout, "Removing directory: %s\n", parentDir); err != nil {
+				return err
+			}
+			if err := os.RemoveAll(parentDir); err != nil {
+				return fmt.Errorf("failed to remove directory %q: %w", parentDir, err)
+			}
 		}
 	}
 
@@ -182,8 +185,10 @@ func cleanAll(repoDir string, stdout io.Writer, stderr io.Writer) error {
 		if err := utils.RunCommandInDirWithWriters(repoRoot, stdout, stderr, "git", "worktree", "remove", "--force", entry.Path); err != nil {
 			return err
 		}
-		if err := os.RemoveAll(filepath.Dir(entry.Path)); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("failed to remove directory %q: %w", filepath.Dir(entry.Path), err)
+		if isPreferredLayoutWorktreePath(entry.Path, repoName) {
+			if err := os.RemoveAll(filepath.Dir(entry.Path)); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("failed to remove directory %q: %w", filepath.Dir(entry.Path), err)
+			}
 		}
 		_ = utils.RunCommandInDirWithWriters(repoRoot, stdout, stderr, "git", "branch", "-D", entry.Branch)
 	}
@@ -201,12 +206,7 @@ func switchTo(repoDir string, branchName string, stdout io.Writer) error {
 		return fmt.Errorf("usage: shw git worktree path [flags] <branch-name>")
 	}
 
-	repoRoot, repoName, err := repoDetails(repoDir)
-	if err != nil {
-		return err
-	}
-
-	containerDir, err := repoContainerDir(repoRoot, repoName)
+	repoRoot, _, err := repoDetails(repoDir)
 	if err != nil {
 		return err
 	}
@@ -226,17 +226,15 @@ func switchTo(repoDir string, branchName string, stdout io.Writer) error {
 			continue
 		}
 
-		worktreeDir := strings.ReplaceAll(entry.Branch, "/", "--")
-		worktreePath := filepath.Join(containerDir, "worktrees", worktreeDir, repoName)
-		info, err := os.Stat(worktreePath)
+		info, err := os.Stat(entry.Path)
 		if err != nil {
-			return fmt.Errorf("worktree for branch %q is not accessible at %s", branchName, worktreePath)
+			return fmt.Errorf("worktree for branch %q is not accessible at %s", branchName, entry.Path)
 		}
 		if !info.IsDir() {
-			return fmt.Errorf("worktree path exists but is not a directory: %s", worktreePath)
+			return fmt.Errorf("worktree path exists but is not a directory: %s", entry.Path)
 		}
 
-		_, err = fmt.Fprintln(stdout, worktreePath)
+		_, err = fmt.Fprintln(stdout, entry.Path)
 		return err
 	}
 	if len(availableBranches) == 0 {
@@ -443,4 +441,16 @@ func mainWorktreePath(entries []entry, repoName string) string {
 func isMainWorktreePath(path string, repoName string) bool {
 	parentDir := filepath.Dir(path)
 	return filepath.Base(filepath.Dir(parentDir)) == repoName
+}
+
+func isPreferredLayoutWorktreePath(path string, repoName string) bool {
+	parentDir := filepath.Dir(path)
+	if filepath.Base(path) != repoName {
+		return false
+	}
+	if filepath.Base(filepath.Dir(parentDir)) != "worktrees" {
+		return false
+	}
+
+	return filepath.Base(filepath.Dir(filepath.Dir(parentDir))) == repoName
 }
