@@ -34,6 +34,9 @@ func TestCreateCreatesWorktreeInPreferredLayout(t *testing.T) {
 	if !strings.Contains(output.String(), "Worktree created: "+resolvedWorktreePath) {
 		t.Fatalf("unexpected stdout: %q", output.String())
 	}
+	if !strings.Contains(output.String(), "To switch to it, run: cd $(shw git worktree path --repo-dir "+fixture.mainDir+" steven/add-worktree-commands)") {
+		t.Fatalf("missing navigation hint in stdout: %q", output.String())
+	}
 }
 
 func TestCommandsAcceptRepoContainerDir(t *testing.T) {
@@ -47,6 +50,9 @@ func TestCommandsAcceptRepoContainerDir(t *testing.T) {
 	worktreePath := realPath(t, fixture.worktreePath("steven/container-path"))
 	if !strings.Contains(createOutput.String(), "Worktree created: "+worktreePath) {
 		t.Fatalf("create stdout got %q, want message containing %q", createOutput.String(), "Worktree created: "+worktreePath)
+	}
+	if !strings.Contains(createOutput.String(), "To switch to it, run: cd $(shw git worktree path --repo-dir "+fixture.containerDir+" steven/container-path)") {
+		t.Fatalf("missing navigation hint in stdout: %q", createOutput.String())
 	}
 
 	var pathOutput bytes.Buffer
@@ -201,6 +207,20 @@ func TestSwitchPrintsResolvedPath(t *testing.T) {
 	}
 
 	want := realPath(t, worktreePath) + "\n"
+	if output.String() != want {
+		t.Fatalf("stdout got %q, want %q", output.String(), want)
+	}
+}
+
+func TestSwitchPrintsDefaultBranchPath(t *testing.T) {
+	fixture := setupRepoFixture(t)
+
+	var output bytes.Buffer
+	if err := switchTo(fixture.mainDir, fixture.defaultBranch, &output); err != nil {
+		t.Fatalf("switchTo returned error: %v", err)
+	}
+
+	want := realPath(t, fixture.mainDir) + "\n"
 	if output.String() != want {
 		t.Fatalf("stdout got %q, want %q", output.String(), want)
 	}

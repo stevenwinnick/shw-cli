@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"shw-cli/internal/utils"
@@ -66,6 +67,11 @@ func create(repoDir string, branchName string, updateDefaultBranch bool, stdout 
 	}
 
 	_, err = fmt.Fprintf(stdout, "Worktree created: %s\n", worktreePath)
+	if err != nil {
+		return err
+	}
+
+	_, err = fmt.Fprintf(stdout, "To switch to it, run: %s\n", navigationCommand(repoDir, branchName))
 	return err
 }
 
@@ -206,12 +212,16 @@ func switchTo(repoDir string, branchName string, stdout io.Writer) error {
 		return fmt.Errorf("usage: shw git worktree path [flags] <branch-name>")
 	}
 
-	repoRoot, _, err := repoDetails(repoDir)
+	repoRoot, repoName, err := repoDetails(repoDir)
 	if err != nil {
 		return err
 	}
 
 	entries, err := listEntries(repoRoot)
+	if err != nil {
+		return err
+	}
+	defaultBranch, err := defaultBranch(repoRoot, repoName)
 	if err != nil {
 		return err
 	}
@@ -236,6 +246,26 @@ func switchTo(repoDir string, branchName string, stdout io.Writer) error {
 
 		_, err = fmt.Fprintln(stdout, entry.Path)
 		return err
+	}
+
+	if branchName == defaultBranch {
+		mainWorktree := mainWorktreePath(entries, repoName)
+		if mainWorktree != "" {
+			info, err := os.Stat(mainWorktree)
+			if err != nil {
+				return fmt.Errorf("worktree for branch %q is not accessible at %s", branchName, mainWorktree)
+			}
+			if !info.IsDir() {
+				return fmt.Errorf("worktree path exists but is not a directory: %s", mainWorktree)
+			}
+
+			_, err = fmt.Fprintln(stdout, mainWorktree)
+			return err
+		}
+	}
+
+	if !containsString(availableBranches, defaultBranch) {
+		availableBranches = append(availableBranches, defaultBranch)
 	}
 	if len(availableBranches) == 0 {
 		return fmt.Errorf("worktree branch %q not found; available: (none)", branchName)
@@ -453,4 +483,37 @@ func isPreferredLayoutWorktreePath(path string, repoName string) bool {
 	}
 
 	return filepath.Base(filepath.Dir(filepath.Dir(parentDir))) == repoName
+}
+
+func navigationCommand(repoDir string, branchName string) string {
+	pathArgs := []string{"shw", "git", "worktree", "path"}
+	if repoDir != "." {
+		pathArgs = append(pathArgs, "--repo-dir", shellQuote(repoDir))
+	}
+	pathArgs = append(pathArgs, shellQuote(branchName))
+
+	return fmt.Sprintf("cd $(%s)", strings.Join(pathArgs, " "))
+}
+
+func shellQuote(value string) string {
+	if value == "" {
+		return `""`
+	}
+	if strings.IndexFunc(value, func(r rune) bool {
+		return !(r == '-' || r == '_' || r == '.' || r == '/' || r == ':' || r == '@' || (r >= '0' && r <= '9') || (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z'))
+	}) == -1 {
+		return value
+	}
+
+	return strconv.Quote(value)
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+
+	return false
 }

@@ -62,7 +62,7 @@ func Command() *cli.Command {
 	worktree.AddChild(newLeafCommand(
 		"path",
 		"Print a worktree path",
-		`Resolve a branch's worktree in Steven's preferred layout and print its path so you can switch to it with commands like cd "$(shw git worktree path <branch-name>)"`,
+		`Resolve a branch's worktree in Steven's preferred layout and print its path so you can switch to it with commands like cd $(shw git worktree path <branch-name>)`,
 		"shw git worktree path [flags] <branch-name>",
 		runPath,
 		repoDirFlag,
