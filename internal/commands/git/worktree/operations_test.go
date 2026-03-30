@@ -14,7 +14,7 @@ func TestCreateCreatesWorktreeInPreferredLayout(t *testing.T) {
 	fixture := setupRepoFixture(t)
 
 	var output bytes.Buffer
-	if err := create(fixture.mainDir, "steven/add-worktree-commands", false, true, &output, io.Discard); err != nil {
+	if err := create(fixture.mainDir, "steven/add-worktree-commands", true, &output, io.Discard); err != nil {
 		t.Fatalf("create returned error: %v", err)
 	}
 
@@ -40,17 +40,17 @@ func TestCommandsAcceptRepoContainerDir(t *testing.T) {
 	fixture := setupRepoFixture(t)
 
 	var createOutput bytes.Buffer
-	if err := create(fixture.containerDir, "steven/container-path", true, true, &createOutput, io.Discard); err != nil {
+	if err := create(fixture.containerDir, "steven/container-path", true, &createOutput, io.Discard); err != nil {
 		t.Fatalf("create returned error: %v", err)
 	}
 
 	worktreePath := realPath(t, fixture.worktreePath("steven/container-path"))
-	if createOutput.String() != worktreePath+"\n" {
-		t.Fatalf("create stdout got %q, want %q", createOutput.String(), worktreePath+"\n")
+	if !strings.Contains(createOutput.String(), "Worktree created: "+worktreePath) {
+		t.Fatalf("create stdout got %q, want message containing %q", createOutput.String(), "Worktree created: "+worktreePath)
 	}
 
 	var pathOutput bytes.Buffer
-	if err := switchTo(fixture.containerDir, "steven--container-path", &pathOutput); err != nil {
+	if err := switchTo(fixture.containerDir, "steven/container-path", &pathOutput); err != nil {
 		t.Fatalf("switchTo returned error: %v", err)
 	}
 	if pathOutput.String() != worktreePath+"\n" {
@@ -58,10 +58,10 @@ func TestCommandsAcceptRepoContainerDir(t *testing.T) {
 	}
 
 	var listOutput bytes.Buffer
-	if err := list(fixture.containerDir, true, &listOutput, io.Discard); err != nil {
+	if err := list(fixture.containerDir, &listOutput, io.Discard); err != nil {
 		t.Fatalf("list returned error: %v", err)
 	}
-	if !strings.Contains(listOutput.String(), worktreePath+":\n") {
+	if !strings.Contains(listOutput.String(), worktreePath) {
 		t.Fatalf("list output missing worktree path:\n%s", listOutput.String())
 	}
 
@@ -71,20 +71,6 @@ func TestCommandsAcceptRepoContainerDir(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Dir(worktreePath)); !os.IsNotExist(err) {
 		t.Fatalf("expected worktree parent directory to be removed, got err=%v", err)
-	}
-}
-
-func TestCreateQuietPrintsOnlyCreatedPath(t *testing.T) {
-	fixture := setupRepoFixture(t)
-
-	var output bytes.Buffer
-	if err := create(fixture.mainDir, "steven/quiet-create", true, true, &output, io.Discard); err != nil {
-		t.Fatalf("create returned error: %v", err)
-	}
-
-	want := realPath(t, fixture.worktreePath("steven/quiet-create")) + "\n"
-	if output.String() != want {
-		t.Fatalf("stdout got %q, want %q", output.String(), want)
 	}
 }
 
@@ -101,7 +87,7 @@ func TestListPrintsOnlyWorktreeListByDefault(t *testing.T) {
 	}
 
 	var output bytes.Buffer
-	if err := list(fixture.mainDir, false, &output, io.Discard); err != nil {
+	if err := list(fixture.mainDir, &output, io.Discard); err != nil {
 		t.Fatalf("list returned error: %v", err)
 	}
 
@@ -114,42 +100,6 @@ func TestListPrintsOnlyWorktreeListByDefault(t *testing.T) {
 	}
 	if strings.Contains(text, "README.md") || strings.Contains(text, "feature.txt") {
 		t.Fatalf("default list output should not include status details:\n%s", text)
-	}
-}
-
-func TestListShowsStatusesWhenRequested(t *testing.T) {
-	fixture := setupRepoFixture(t)
-
-	featurePath := fixture.createWorktree(t, "steven/feature")
-	missingPath := fixture.createWorktree(t, "steven/missing")
-
-	if err := os.WriteFile(filepath.Join(fixture.mainDir, "README.md"), []byte("updated\n"), 0o644); err != nil {
-		t.Fatalf("failed to update main README: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(featurePath, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
-		t.Fatalf("failed to create feature file: %v", err)
-	}
-	if err := os.RemoveAll(filepath.Dir(missingPath)); err != nil {
-		t.Fatalf("failed to remove missing worktree parent dir: %v", err)
-	}
-
-	var output bytes.Buffer
-	if err := list(fixture.mainDir, true, &output, io.Discard); err != nil {
-		t.Fatalf("list returned error: %v", err)
-	}
-
-	text := output.String()
-	if !strings.Contains(text, "Worktree statuses:\n") {
-		t.Fatalf("missing status section header:\n%s", text)
-	}
-	if !strings.Contains(text, realPath(t, fixture.mainDir)+":\n M README.md\n") {
-		t.Fatalf("missing main worktree status in output:\n%s", text)
-	}
-	if !strings.Contains(text, realPath(t, featurePath)+":\n?? feature.txt\n") {
-		t.Fatalf("missing feature worktree status in output:\n%s", text)
-	}
-	if !strings.Contains(text, realPath(t, missingPath)+":\n(not accessible)\n") {
-		t.Fatalf("missing inaccessible worktree marker in output:\n%s", text)
 	}
 }
 
@@ -210,7 +160,7 @@ func TestSwitchPrintsResolvedPath(t *testing.T) {
 	worktreePath := fixture.createWorktree(t, "steven/feature")
 
 	var output bytes.Buffer
-	if err := switchTo(fixture.mainDir, "steven--feature", &output); err != nil {
+	if err := switchTo(fixture.mainDir, "steven/feature", &output); err != nil {
 		t.Fatalf("switchTo returned error: %v", err)
 	}
 
@@ -228,8 +178,8 @@ func TestSwitchListsAvailableNamesWhenTargetIsMissing(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing worktree error")
 	}
-	if !strings.Contains(err.Error(), "steven--feature") {
-		t.Fatalf("error got %q, want available worktree name", err.Error())
+	if !strings.Contains(err.Error(), "steven/feature") {
+		t.Fatalf("error got %q, want available branch name", err.Error())
 	}
 }
 
@@ -238,11 +188,11 @@ func TestCreateUpdatesDefaultBranchBeforeBranchingByDefault(t *testing.T) {
 	fixture.advanceDefaultBranchOnRemote(t)
 
 	var output bytes.Buffer
-	if err := create(fixture.mainDir, "steven/from-updated-default", true, true, &output, io.Discard); err != nil {
+	if err := create(fixture.mainDir, "steven/from-updated-default", true, &output, io.Discard); err != nil {
 		t.Fatalf("create returned error: %v", err)
 	}
 
-	worktreePath := strings.TrimSpace(output.String())
+	worktreePath := fixture.worktreePath("steven/from-updated-default")
 	if got := readFile(t, filepath.Join(worktreePath, "remote.txt")); got != "from remote\n" {
 		t.Fatalf("remote update missing from created worktree, got %q", got)
 	}
@@ -253,11 +203,11 @@ func TestCreateCanSkipDefaultBranchUpdate(t *testing.T) {
 	fixture.advanceDefaultBranchOnRemote(t)
 
 	var output bytes.Buffer
-	if err := create(fixture.mainDir, "steven/from-stale-default", true, false, &output, io.Discard); err != nil {
+	if err := create(fixture.mainDir, "steven/from-stale-default", false, &output, io.Discard); err != nil {
 		t.Fatalf("create returned error: %v", err)
 	}
 
-	worktreePath := strings.TrimSpace(output.String())
+	worktreePath := fixture.worktreePath("steven/from-stale-default")
 	if _, err := os.Stat(filepath.Join(worktreePath, "remote.txt")); !os.IsNotExist(err) {
 		t.Fatalf("expected remote update to be absent without fetch, got err=%v", err)
 	}
@@ -316,7 +266,7 @@ func (f repoFixture) createWorktree(t *testing.T, branch string) string {
 	t.Helper()
 
 	var output bytes.Buffer
-	if err := create(f.mainDir, branch, false, true, &output, io.Discard); err != nil {
+	if err := create(f.mainDir, branch, true, &output, io.Discard); err != nil {
 		t.Fatalf("create returned error: %v", err)
 	}
 

@@ -6,22 +6,11 @@ import (
 	"shw-cli/internal/cli"
 )
 
-var quietFlag = cli.Flag{
-	Long:        "quiet",
-	Short:       "q",
-	Description: "Print only the resulting path when supported",
-}
-
 var repoDirFlag = cli.Flag{
 	Long:        "repo-dir",
 	Short:       "r",
 	ValueName:   "<repo-dir>",
 	Description: "Use a repo other than the current directory",
-}
-
-var showStatusFlag = cli.Flag{
-	Long:        "show-status",
-	Description: "Show git status output for each worktree after the worktree list",
 }
 
 var noUpdateDefaultBranchFlag = cli.Flag{
@@ -44,17 +33,15 @@ func Command() *cli.Command {
 		"shw git worktree create [flags] <branch-name>",
 		runCreate,
 		repoDirFlag,
-		quietFlag,
 		noUpdateDefaultBranchFlag,
 	))
 	worktree.AddChild(newLeafCommand(
 		"list",
 		"List worktrees",
 		"List worktrees for a repo",
-		"shw git worktree list [flags]",
+		"shw git worktree list",
 		runList,
 		repoDirFlag,
-		showStatusFlag,
 	))
 	worktree.AddChild(newLeafCommand(
 		"remove",
@@ -75,8 +62,8 @@ func Command() *cli.Command {
 	worktree.AddChild(newLeafCommand(
 		"path",
 		"Print a worktree path",
-		`Resolve a named worktree in Steven's preferred layout and print its path so you can switch to it with commands like cd "$(shw git worktree path <worktree-name>)"`,
-		"shw git worktree path [flags] <worktree-name>",
+		`Resolve a branch's worktree in Steven's preferred layout and print its path so you can switch to it with commands like cd "$(shw git worktree path <branch-name>)"`,
+		"shw git worktree path [flags] <branch-name>",
 		runPath,
 		repoDirFlag,
 	))
@@ -96,7 +83,6 @@ func newLeafCommand(name string, summary string, description string, usage strin
 }
 
 func runCreate(args []string) error {
-	quiet, args := cli.ConsumeBoolFlag(args, quietFlag)
 	noUpdateDefaultBranch, args := cli.ConsumeBoolFlag(args, noUpdateDefaultBranchFlag)
 	repoDir, args, err := consumeRepoDir(args)
 	if err != nil {
@@ -105,19 +91,18 @@ func runCreate(args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: shw git worktree create [flags] <branch-name>")
 	}
-	return CreateWithOptions(repoDir, args[0], quiet, !noUpdateDefaultBranch)
+	return CreateWithOptions(repoDir, args[0], !noUpdateDefaultBranch)
 }
 
 func runList(args []string) error {
-	showStatus, args := cli.ConsumeBoolFlag(args, showStatusFlag)
 	repoDir, args, err := consumeRepoDir(args)
 	if err != nil {
 		return err
 	}
 	if len(args) != 0 {
-		return fmt.Errorf("usage: shw git worktree list [flags]")
+		return fmt.Errorf("usage: shw git worktree list")
 	}
-	return List(repoDir, showStatus)
+	return List(repoDir)
 }
 
 func runRemove(args []string) error {
@@ -148,7 +133,7 @@ func runPath(args []string) error {
 		return err
 	}
 	if len(args) != 1 {
-		return fmt.Errorf("usage: shw git worktree path [flags] <worktree-name>")
+		return fmt.Errorf("usage: shw git worktree path [flags] <branch-name>")
 	}
 	return Path(repoDir, args[0])
 }

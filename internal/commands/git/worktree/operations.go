@@ -16,15 +16,15 @@ type entry struct {
 	Branch string
 }
 
-func Create(repoDir string, branchName string, quiet bool) error {
-	return CreateWithOptions(repoDir, branchName, quiet, true)
+func Create(repoDir string, branchName string) error {
+	return CreateWithOptions(repoDir, branchName, true)
 }
 
-func CreateWithOptions(repoDir string, branchName string, quiet bool, updateDefaultBranch bool) error {
-	return create(repoDir, branchName, quiet, updateDefaultBranch, os.Stdout, os.Stderr)
+func CreateWithOptions(repoDir string, branchName string, updateDefaultBranch bool) error {
+	return create(repoDir, branchName, updateDefaultBranch, os.Stdout, os.Stderr)
 }
 
-func create(repoDir string, branchName string, quiet bool, updateDefaultBranch bool, stdout io.Writer, stderr io.Writer) error {
+func create(repoDir string, branchName string, updateDefaultBranch bool, stdout io.Writer, stderr io.Writer) error {
 	if strings.TrimSpace(repoDir) == "" || strings.TrimSpace(branchName) == "" {
 		return fmt.Errorf("usage: shw git worktree create [flags] <branch-name>")
 	}
@@ -61,14 +61,6 @@ func create(repoDir string, branchName string, quiet bool, updateDefaultBranch b
 	}
 
 	addArgs := []string{"worktree", "add", "-b", branchName, worktreePath, baseRef}
-	if quiet {
-		if err := utils.RunCommandInDirWithWriters(repoRoot, io.Discard, stderr, "git", addArgs...); err != nil {
-			return err
-		}
-		_, err = fmt.Fprintln(stdout, worktreePath)
-		return err
-	}
-
 	if err := utils.RunCommandInDirWithWriters(repoRoot, stdout, stderr, "git", addArgs...); err != nil {
 		return err
 	}
@@ -77,13 +69,13 @@ func create(repoDir string, branchName string, quiet bool, updateDefaultBranch b
 	return err
 }
 
-func List(repoDir string, showStatus bool) error {
-	return list(repoDir, showStatus, os.Stdout, os.Stderr)
+func List(repoDir string) error {
+	return list(repoDir, os.Stdout, os.Stderr)
 }
 
-func list(repoDir string, showStatus bool, stdout io.Writer, stderr io.Writer) error {
+func list(repoDir string, stdout io.Writer, stderr io.Writer) error {
 	if strings.TrimSpace(repoDir) == "" {
-		return fmt.Errorf("usage: shw git worktree list [flags]")
+		return fmt.Errorf("usage: shw git worktree list")
 	}
 
 	repoRoot, _, err := repoDetails(repoDir)
@@ -91,61 +83,7 @@ func list(repoDir string, showStatus bool, stdout io.Writer, stderr io.Writer) e
 		return err
 	}
 
-	if err := utils.RunCommandInDirWithWriters(repoRoot, stdout, stderr, "git", "worktree", "list"); err != nil {
-		return err
-	}
-	if !showStatus {
-		return nil
-	}
-
-	entries, err := listEntries(repoRoot)
-	if err != nil {
-		return err
-	}
-
-	if _, err := fmt.Fprintln(stdout); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintln(stdout, "Worktree statuses:"); err != nil {
-		return err
-	}
-
-	for _, entry := range entries {
-		if _, err := fmt.Fprintf(stdout, "%s:\n", entry.Path); err != nil {
-			return err
-		}
-
-		if _, err := os.Stat(entry.Path); err != nil {
-			if _, err := fmt.Fprintln(stdout, "(not accessible)"); err != nil {
-				return err
-			}
-			continue
-		}
-
-		utils.PrintCommand(stderr, "git", "status", "--short")
-		status, err := utils.CaptureCommandInDir(entry.Path, "git", "status", "--short")
-		if err != nil {
-			if _, err := fmt.Fprintln(stdout, "(not accessible)"); err != nil {
-				return err
-			}
-			continue
-		}
-
-		if status == "" {
-			continue
-		}
-
-		if _, err := fmt.Fprint(stdout, status); err != nil {
-			return err
-		}
-		if !strings.HasSuffix(status, "\n") {
-			if _, err := fmt.Fprintln(stdout); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
+	return utils.RunCommandInDirWithWriters(repoRoot, stdout, stderr, "git", "worktree", "list")
 }
 
 func Remove(repoDir string, branchName string) error {
@@ -258,9 +196,9 @@ func Path(repoDir string, name string) error {
 	return switchTo(repoDir, name, os.Stdout)
 }
 
-func switchTo(repoDir string, name string, stdout io.Writer) error {
-	if strings.TrimSpace(repoDir) == "" || strings.TrimSpace(name) == "" {
-		return fmt.Errorf("usage: shw git worktree path [flags] <worktree-name>")
+func switchTo(repoDir string, branchName string, stdout io.Writer) error {
+	if strings.TrimSpace(repoDir) == "" || strings.TrimSpace(branchName) == "" {
+		return fmt.Errorf("usage: shw git worktree path [flags] <branch-name>")
 	}
 
 	repoRoot, repoName, err := repoDetails(repoDir)
@@ -273,25 +211,39 @@ func switchTo(repoDir string, name string, stdout io.Writer) error {
 		return err
 	}
 
-	worktreePath := filepath.Join(containerDir, "worktrees", name, repoName)
-	info, err := os.Stat(worktreePath)
-	if err == nil {
-		if !info.IsDir() {
-			return fmt.Errorf("worktree path exists but is not a directory: %s", worktreePath)
-		}
-		_, err = fmt.Fprintln(stdout, worktreePath)
+	entries, err := listEntries(repoRoot)
+	if err != nil {
 		return err
 	}
 
-	names, listErr := availableWorktreeNames(filepath.Join(containerDir, "worktrees"))
-	if listErr != nil {
-		return listErr
+	availableBranches := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Branch == "" {
+			continue
+		}
+		availableBranches = append(availableBranches, entry.Branch)
+		if entry.Branch != branchName {
+			continue
+		}
+
+		worktreeDir := strings.ReplaceAll(entry.Branch, "/", "--")
+		worktreePath := filepath.Join(containerDir, "worktrees", worktreeDir, repoName)
+		info, err := os.Stat(worktreePath)
+		if err != nil {
+			return fmt.Errorf("worktree for branch %q is not accessible at %s", branchName, worktreePath)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("worktree path exists but is not a directory: %s", worktreePath)
+		}
+
+		_, err = fmt.Fprintln(stdout, worktreePath)
+		return err
 	}
-	if len(names) == 0 {
-		return fmt.Errorf("worktree %q not found; available: (none)", name)
+	if len(availableBranches) == 0 {
+		return fmt.Errorf("worktree branch %q not found; available: (none)", branchName)
 	}
 
-	return fmt.Errorf("worktree %q not found; available: %s", name, strings.Join(names, ", "))
+	return fmt.Errorf("worktree branch %q not found; available: %s", branchName, strings.Join(availableBranches, ", "))
 }
 
 func repoDetails(repoDir string) (string, string, error) {
@@ -491,23 +443,4 @@ func mainWorktreePath(entries []entry, repoName string) string {
 func isMainWorktreePath(path string, repoName string) bool {
 	parentDir := filepath.Dir(path)
 	return filepath.Base(filepath.Dir(parentDir)) == repoName
-}
-
-func availableWorktreeNames(worktreesDir string) ([]string, error) {
-	dirEntries, err := os.ReadDir(worktreesDir)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to list worktrees in %q: %w", worktreesDir, err)
-	}
-
-	names := make([]string, 0, len(dirEntries))
-	for _, dirEntry := range dirEntries {
-		if dirEntry.IsDir() {
-			names = append(names, dirEntry.Name())
-		}
-	}
-
-	return names, nil
 }

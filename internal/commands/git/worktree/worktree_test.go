@@ -35,16 +35,13 @@ func TestCreateCommandIncludesExpectedFlags(t *testing.T) {
 	if create == nil {
 		t.Fatal("expected create command")
 	}
-	if len(create.Flags) != 3 {
+	if len(create.Flags) != 2 {
 		t.Fatalf("unexpected create flags: %+v", create.Flags)
 	}
 	if create.Flags[0].Long != "repo-dir" || create.Flags[0].Short != "r" {
 		t.Fatalf("missing repo-dir flag: %+v", create.Flags)
 	}
-	if create.Flags[1].Long != "quiet" || create.Flags[1].Short != "q" {
-		t.Fatalf("missing quiet flag: %+v", create.Flags)
-	}
-	if create.Flags[2].Long != "no-update-default-branch" {
+	if create.Flags[1].Long != "no-update-default-branch" {
 		t.Fatalf("missing no-update-default-branch flag: %+v", create.Flags)
 	}
 }
@@ -76,7 +73,7 @@ func TestLeafHandlersRejectWrongArgCounts(t *testing.T) {
 	}
 }
 
-func TestPathCommandHelpUsesWorktreeNamePlaceholder(t *testing.T) {
+func TestPathCommandHelpUsesBranchNamePlaceholder(t *testing.T) {
 	cmd := Command()
 
 	var pathCmd *cli.Command
@@ -89,10 +86,10 @@ func TestPathCommandHelpUsesWorktreeNamePlaceholder(t *testing.T) {
 	if pathCmd == nil {
 		t.Fatal("expected path command")
 	}
-	if !strings.Contains(pathCmd.Usage, "<worktree-name>") {
-		t.Fatalf("usage got %q, want worktree-name placeholder", pathCmd.Usage)
+	if !strings.Contains(pathCmd.Usage, "<branch-name>") {
+		t.Fatalf("usage got %q, want branch-name placeholder", pathCmd.Usage)
 	}
-	if !strings.Contains(pathCmd.Description, `cd "$(shw git worktree path <worktree-name>)"`) {
+	if !strings.Contains(pathCmd.Description, `cd "$(shw git worktree path <branch-name>)"`) {
 		t.Fatalf("description got %q, want cd example", pathCmd.Description)
 	}
 }
