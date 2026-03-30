@@ -40,7 +40,7 @@ func TestCreateCreatesWorktreeInPreferredLayout(t *testing.T) {
 	if !strings.Contains(output.String(), "To switch to it, run: `cd $(shw git worktree path --repo-dir "+fixture.mainDir+" steven/add-worktree-commands)`") {
 		t.Fatalf("missing navigation hint in stdout: %q", output.String())
 	}
-	if !strings.Contains(output.String(), "Navigation command copied to clipboard") {
+	if !strings.Contains(output.String(), "Navigation command copied to clipboard. Paste it and press enter to navigate to the new branch.") {
 		t.Fatalf("missing clipboard copy confirmation in stdout: %q", output.String())
 	}
 }
@@ -62,7 +62,7 @@ func TestCommandsAcceptRepoContainerDir(t *testing.T) {
 	if !strings.Contains(createOutput.String(), "To switch to it, run: `cd $(shw git worktree path --repo-dir "+fixture.containerDir+" steven/container-path)`") {
 		t.Fatalf("missing navigation hint in stdout: %q", createOutput.String())
 	}
-	if !strings.Contains(createOutput.String(), "Navigation command copied to clipboard") {
+	if !strings.Contains(createOutput.String(), "Navigation command copied to clipboard. Paste it and press enter to navigate to the new branch.") {
 		t.Fatalf("missing clipboard copy confirmation in stdout: %q", createOutput.String())
 	}
 
@@ -373,7 +373,7 @@ func TestCreateSkipsClipboardCopyWhenDisabled(t *testing.T) {
 	if called {
 		t.Fatal("expected clipboard copy to be skipped")
 	}
-	if strings.Contains(stdout.String(), "Navigation command copied to clipboard") {
+	if strings.Contains(stdout.String(), "Navigation command copied to clipboard. Paste it and press enter to navigate to the new branch.") {
 		t.Fatalf("unexpected clipboard copy confirmation in stdout: %q", stdout.String())
 	}
 }
@@ -392,7 +392,7 @@ func TestCreateWarnsWhenClipboardCopyFails(t *testing.T) {
 		t.Fatalf("create returned error: %v", err)
 	}
 
-	if strings.Contains(stdout.String(), "Navigation command copied to clipboard") {
+	if strings.Contains(stdout.String(), "Navigation command copied to clipboard. Paste it and press enter to navigate to the new branch.") {
 		t.Fatalf("unexpected clipboard success confirmation in stdout: %q", stdout.String())
 	}
 	if !strings.Contains(stderr.String(), "Warning: failed to copy navigation command to clipboard: clipboard unavailable") {

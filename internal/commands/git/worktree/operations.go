@@ -86,7 +86,7 @@ func create(repoDir string, branchName string, updateDefaultBranch bool, copyNav
 		return writeErr
 	}
 
-	_, err = fmt.Fprintln(stdout, "Navigation command copied to clipboard")
+	_, err = fmt.Fprintln(stdout, "Navigation command copied to clipboard. Paste it and press enter to navigate to the new branch.")
 	return err
 }
 
