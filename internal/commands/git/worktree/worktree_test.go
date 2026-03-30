@@ -89,7 +89,7 @@ func TestPathCommandHelpUsesBranchNamePlaceholder(t *testing.T) {
 	if !strings.Contains(pathCmd.Usage, "<branch-name>") {
 		t.Fatalf("usage got %q, want branch-name placeholder", pathCmd.Usage)
 	}
-	if !strings.Contains(pathCmd.Description, `cd $(shw git worktree path <branch-name>)`) {
+	if !strings.Contains(pathCmd.Description, "`cd $(shw git worktree path <branch-name>)`") {
 		t.Fatalf("description got %q, want cd example", pathCmd.Description)
 	}
 }

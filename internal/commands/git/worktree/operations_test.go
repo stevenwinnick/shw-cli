@@ -34,7 +34,7 @@ func TestCreateCreatesWorktreeInPreferredLayout(t *testing.T) {
 	if !strings.Contains(output.String(), "Worktree created: "+resolvedWorktreePath) {
 		t.Fatalf("unexpected stdout: %q", output.String())
 	}
-	if !strings.Contains(output.String(), "To switch to it, run: cd $(shw git worktree path --repo-dir "+fixture.mainDir+" steven/add-worktree-commands)") {
+	if !strings.Contains(output.String(), "To switch to it, run: `cd $(shw git worktree path --repo-dir "+fixture.mainDir+" steven/add-worktree-commands)`") {
 		t.Fatalf("missing navigation hint in stdout: %q", output.String())
 	}
 }
@@ -51,7 +51,7 @@ func TestCommandsAcceptRepoContainerDir(t *testing.T) {
 	if !strings.Contains(createOutput.String(), "Worktree created: "+worktreePath) {
 		t.Fatalf("create stdout got %q, want message containing %q", createOutput.String(), "Worktree created: "+worktreePath)
 	}
-	if !strings.Contains(createOutput.String(), "To switch to it, run: cd $(shw git worktree path --repo-dir "+fixture.containerDir+" steven/container-path)") {
+	if !strings.Contains(createOutput.String(), "To switch to it, run: `cd $(shw git worktree path --repo-dir "+fixture.containerDir+" steven/container-path)`") {
 		t.Fatalf("missing navigation hint in stdout: %q", createOutput.String())
 	}
 

@@ -71,7 +71,7 @@ func create(repoDir string, branchName string, updateDefaultBranch bool, stdout 
 		return err
 	}
 
-	_, err = fmt.Fprintf(stdout, "To switch to it, run: %s\n", navigationCommand(repoDir, branchName))
+	_, err = fmt.Fprintf(stdout, "To switch to it, run: `%s`\n", navigationCommand(repoDir, branchName))
 	return err
 }
 
