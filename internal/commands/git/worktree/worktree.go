@@ -18,6 +18,13 @@ var noUpdateDefaultBranchFlag = cli.Flag{
 	Description: "Skip fetching the default branch before creating the worktree",
 }
 
+var noCopyNavigationCommandFlag = cli.Flag{
+	Long:        "no-copy-navigation-command",
+	Description: "Do not copy the navigation command to the clipboard after creating the worktree",
+}
+
+var createWorktree = CreateWithOptions
+
 func Command() *cli.Command {
 	worktree := &cli.Command{
 		Name:        "worktree",
@@ -34,6 +41,7 @@ func Command() *cli.Command {
 		runCreate,
 		repoDirFlag,
 		noUpdateDefaultBranchFlag,
+		noCopyNavigationCommandFlag,
 	))
 	worktree.AddChild(newLeafCommand(
 		"list",
@@ -84,6 +92,7 @@ func newLeafCommand(name string, summary string, description string, usage strin
 
 func runCreate(args []string) error {
 	noUpdateDefaultBranch, args := cli.ConsumeBoolFlag(args, noUpdateDefaultBranchFlag)
+	noCopyNavigationCommand, args := cli.ConsumeBoolFlag(args, noCopyNavigationCommandFlag)
 	repoDir, args, err := consumeRepoDir(args)
 	if err != nil {
 		return err
@@ -91,7 +100,7 @@ func runCreate(args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: shw git worktree create [flags] <branch-name>")
 	}
-	return CreateWithOptions(repoDir, args[0], !noUpdateDefaultBranch)
+	return createWorktree(repoDir, args[0], !noUpdateDefaultBranch, !noCopyNavigationCommand)
 }
 
 func runList(args []string) error {

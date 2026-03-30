@@ -2,6 +2,7 @@ package worktree
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -12,9 +13,11 @@ import (
 
 func TestCreateCreatesWorktreeInPreferredLayout(t *testing.T) {
 	fixture := setupRepoFixture(t)
+	restoreClipboard := stubClipboardCopy(t, nil)
+	defer restoreClipboard()
 
 	var output bytes.Buffer
-	if err := create(fixture.mainDir, "steven/add-worktree-commands", true, &output, io.Discard); err != nil {
+	if err := create(fixture.mainDir, "steven/add-worktree-commands", true, true, &output, io.Discard); err != nil {
 		t.Fatalf("create returned error: %v", err)
 	}
 
@@ -37,13 +40,18 @@ func TestCreateCreatesWorktreeInPreferredLayout(t *testing.T) {
 	if !strings.Contains(output.String(), "To switch to it, run: `cd $(shw git worktree path --repo-dir "+fixture.mainDir+" steven/add-worktree-commands)`") {
 		t.Fatalf("missing navigation hint in stdout: %q", output.String())
 	}
+	if !strings.Contains(output.String(), "Navigation command copied to clipboard") {
+		t.Fatalf("missing clipboard copy confirmation in stdout: %q", output.String())
+	}
 }
 
 func TestCommandsAcceptRepoContainerDir(t *testing.T) {
 	fixture := setupRepoFixture(t)
+	restoreClipboard := stubClipboardCopy(t, nil)
+	defer restoreClipboard()
 
 	var createOutput bytes.Buffer
-	if err := create(fixture.containerDir, "steven/container-path", true, &createOutput, io.Discard); err != nil {
+	if err := create(fixture.containerDir, "steven/container-path", true, true, &createOutput, io.Discard); err != nil {
 		t.Fatalf("create returned error: %v", err)
 	}
 
@@ -53,6 +61,9 @@ func TestCommandsAcceptRepoContainerDir(t *testing.T) {
 	}
 	if !strings.Contains(createOutput.String(), "To switch to it, run: `cd $(shw git worktree path --repo-dir "+fixture.containerDir+" steven/container-path)`") {
 		t.Fatalf("missing navigation hint in stdout: %q", createOutput.String())
+	}
+	if !strings.Contains(createOutput.String(), "Navigation command copied to clipboard") {
+		t.Fatalf("missing clipboard copy confirmation in stdout: %q", createOutput.String())
 	}
 
 	var pathOutput bytes.Buffer
@@ -259,7 +270,7 @@ func TestCreateUpdatesDefaultBranchBeforeBranchingByDefault(t *testing.T) {
 	fixture.advanceDefaultBranchOnRemote(t)
 
 	var output bytes.Buffer
-	if err := create(fixture.mainDir, "steven/from-updated-default", true, &output, io.Discard); err != nil {
+	if err := create(fixture.mainDir, "steven/from-updated-default", true, false, &output, io.Discard); err != nil {
 		t.Fatalf("create returned error: %v", err)
 	}
 
@@ -274,7 +285,7 @@ func TestCreateCanSkipDefaultBranchUpdate(t *testing.T) {
 	fixture.advanceDefaultBranchOnRemote(t)
 
 	var output bytes.Buffer
-	if err := create(fixture.mainDir, "steven/from-stale-default", false, &output, io.Discard); err != nil {
+	if err := create(fixture.mainDir, "steven/from-stale-default", false, false, &output, io.Discard); err != nil {
 		t.Fatalf("create returned error: %v", err)
 	}
 
@@ -337,11 +348,70 @@ func (f repoFixture) createWorktree(t *testing.T, branch string) string {
 	t.Helper()
 
 	var output bytes.Buffer
-	if err := create(f.mainDir, branch, true, &output, io.Discard); err != nil {
+	if err := create(f.mainDir, branch, true, false, &output, io.Discard); err != nil {
 		t.Fatalf("create returned error: %v", err)
 	}
 
 	return f.worktreePath(branch)
+}
+
+func TestCreateSkipsClipboardCopyWhenDisabled(t *testing.T) {
+	fixture := setupRepoFixture(t)
+
+	called := false
+	restoreClipboard := stubClipboardCopy(t, func(string) error {
+		called = true
+		return nil
+	})
+	defer restoreClipboard()
+
+	var stdout bytes.Buffer
+	if err := create(fixture.mainDir, "steven/no-clipboard", true, false, &stdout, io.Discard); err != nil {
+		t.Fatalf("create returned error: %v", err)
+	}
+
+	if called {
+		t.Fatal("expected clipboard copy to be skipped")
+	}
+	if strings.Contains(stdout.String(), "Navigation command copied to clipboard") {
+		t.Fatalf("unexpected clipboard copy confirmation in stdout: %q", stdout.String())
+	}
+}
+
+func TestCreateWarnsWhenClipboardCopyFails(t *testing.T) {
+	fixture := setupRepoFixture(t)
+
+	restoreClipboard := stubClipboardCopy(t, func(string) error {
+		return fmt.Errorf("clipboard unavailable")
+	})
+	defer restoreClipboard()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := create(fixture.mainDir, "steven/clipboard-warning", true, true, &stdout, &stderr); err != nil {
+		t.Fatalf("create returned error: %v", err)
+	}
+
+	if strings.Contains(stdout.String(), "Navigation command copied to clipboard") {
+		t.Fatalf("unexpected clipboard success confirmation in stdout: %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "Warning: failed to copy navigation command to clipboard: clipboard unavailable") {
+		t.Fatalf("missing clipboard warning in stderr: %q", stderr.String())
+	}
+}
+
+func stubClipboardCopy(t *testing.T, fn func(string) error) func() {
+	t.Helper()
+
+	original := copyTextToClipboard
+	if fn == nil {
+		fn = func(string) error { return nil }
+	}
+	copyTextToClipboard = fn
+
+	return func() {
+		copyTextToClipboard = original
+	}
 }
 
 func (f repoFixture) createExternalWorktree(t *testing.T, branch string) string {

@@ -35,7 +35,7 @@ func TestCreateCommandIncludesExpectedFlags(t *testing.T) {
 	if create == nil {
 		t.Fatal("expected create command")
 	}
-	if len(create.Flags) != 2 {
+	if len(create.Flags) != 3 {
 		t.Fatalf("unexpected create flags: %+v", create.Flags)
 	}
 	if create.Flags[0].Long != "repo-dir" || create.Flags[0].Short != "r" {
@@ -43,6 +43,9 @@ func TestCreateCommandIncludesExpectedFlags(t *testing.T) {
 	}
 	if create.Flags[1].Long != "no-update-default-branch" {
 		t.Fatalf("missing no-update-default-branch flag: %+v", create.Flags)
+	}
+	if create.Flags[2].Long != "no-copy-navigation-command" {
+		t.Fatalf("missing no-copy-navigation-command flag: %+v", create.Flags)
 	}
 }
 
@@ -91,5 +94,37 @@ func TestPathCommandHelpUsesBranchNamePlaceholder(t *testing.T) {
 	}
 	if !strings.Contains(pathCmd.Description, "`cd $(shw git worktree path <branch-name>)`") {
 		t.Fatalf("description got %q, want cd example", pathCmd.Description)
+	}
+}
+
+func TestRunCreatePassesOptionFlags(t *testing.T) {
+	originalCreateWorktree := createWorktree
+	defer func() {
+		createWorktree = originalCreateWorktree
+	}()
+
+	called := false
+	createWorktree = func(repoDir string, branchName string, updateDefaultBranch bool, copyNavigationCommand bool) error {
+		called = true
+		if repoDir != "/tmp/repo" {
+			t.Fatalf("repoDir got %q, want %q", repoDir, "/tmp/repo")
+		}
+		if branchName != "steven/feature" {
+			t.Fatalf("branchName got %q, want %q", branchName, "steven/feature")
+		}
+		if updateDefaultBranch {
+			t.Fatal("expected no-update-default-branch to disable default-branch updates")
+		}
+		if copyNavigationCommand {
+			t.Fatal("expected no-copy-navigation-command to disable clipboard copy")
+		}
+		return nil
+	}
+
+	if err := runCreate([]string{"--repo-dir", "/tmp/repo", "--no-update-default-branch", "--no-copy-navigation-command", "steven/feature"}); err != nil {
+		t.Fatalf("runCreate returned error: %v", err)
+	}
+	if !called {
+		t.Fatal("expected createWorktree to be called")
 	}
 }

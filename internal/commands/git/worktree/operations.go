@@ -18,14 +18,14 @@ type entry struct {
 }
 
 func Create(repoDir string, branchName string) error {
-	return CreateWithOptions(repoDir, branchName, true)
+	return CreateWithOptions(repoDir, branchName, true, true)
 }
 
-func CreateWithOptions(repoDir string, branchName string, updateDefaultBranch bool) error {
-	return create(repoDir, branchName, updateDefaultBranch, os.Stdout, os.Stderr)
+func CreateWithOptions(repoDir string, branchName string, updateDefaultBranch bool, copyNavigationCommand bool) error {
+	return create(repoDir, branchName, updateDefaultBranch, copyNavigationCommand, os.Stdout, os.Stderr)
 }
 
-func create(repoDir string, branchName string, updateDefaultBranch bool, stdout io.Writer, stderr io.Writer) error {
+func create(repoDir string, branchName string, updateDefaultBranch bool, copyNavigationCommand bool, stdout io.Writer, stderr io.Writer) error {
 	if strings.TrimSpace(repoDir) == "" || strings.TrimSpace(branchName) == "" {
 		return fmt.Errorf("usage: shw git worktree create [flags] <branch-name>")
 	}
@@ -71,7 +71,22 @@ func create(repoDir string, branchName string, updateDefaultBranch bool, stdout 
 		return err
 	}
 
-	_, err = fmt.Fprintf(stdout, "To switch to it, run: `%s`\n", navigationCommand(repoDir, branchName))
+	command := navigationCommand(repoDir, branchName)
+	_, err = fmt.Fprintf(stdout, "To switch to it, run: `%s`\n", command)
+	if err != nil {
+		return err
+	}
+
+	if !copyNavigationCommand {
+		return nil
+	}
+
+	if err := copyTextToClipboard(command); err != nil {
+		_, writeErr := fmt.Fprintf(stderr, "Warning: failed to copy navigation command to clipboard: %v\n", err)
+		return writeErr
+	}
+
+	_, err = fmt.Fprintln(stdout, "Navigation command copied to clipboard")
 	return err
 }
 
