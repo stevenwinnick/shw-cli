@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -33,5 +34,25 @@ func TestRunCommandReturnsWrappedError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "command failed") {
 		t.Fatalf("expected wrapped error, got: %v", err)
+	}
+}
+
+func TestRunCommandInDirWithWritersPrintsCommand(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses POSIX shell")
+	}
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	if err := RunCommandInDirWithWriters("", stdout, stderr, "sh", "-c", "printf ok"); err != nil {
+		t.Fatalf("RunCommandInDirWithWriters returned error: %v", err)
+	}
+
+	if stdout.String() != "ok" {
+		t.Fatalf("stdout got %q, want %q", stdout.String(), "ok")
+	}
+	if !strings.Contains(stderr.String(), `Executing command: sh -c "printf ok"`) {
+		t.Fatalf("stderr missing command log: %q", stderr.String())
 	}
 }

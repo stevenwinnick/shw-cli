@@ -12,6 +12,23 @@ var quietFlag = cli.Flag{
 	Description: "Print only the resulting path when supported",
 }
 
+var repoDirFlag = cli.Flag{
+	Long:        "repo-dir",
+	Short:       "r",
+	ValueName:   "<repo-dir>",
+	Description: "Use a repo other than the current directory",
+}
+
+var showStatusFlag = cli.Flag{
+	Long:        "show-status",
+	Description: "Show git status output for each worktree after the worktree list",
+}
+
+var noUpdateDefaultBranchFlag = cli.Flag{
+	Long:        "no-update-default-branch",
+	Description: "Skip fetching the default branch before creating the worktree",
+}
+
 func Command() *cli.Command {
 	worktree := &cli.Command{
 		Name:        "worktree",
@@ -24,37 +41,44 @@ func Command() *cli.Command {
 		"create",
 		"Create a worktree for a branch",
 		"Create a worktree for a branch in Steven's preferred layout",
-		"shw git worktree create [flags] <repo-dir> <branch-name>",
+		"shw git worktree create [flags] <branch-name>",
 		runCreate,
+		repoDirFlag,
 		quietFlag,
+		noUpdateDefaultBranchFlag,
 	))
 	worktree.AddChild(newLeafCommand(
 		"list",
-		"List worktrees and statuses",
-		"List worktrees for a repo and show the status of each worktree",
-		"shw git worktree list <repo-dir>",
+		"List worktrees",
+		"List worktrees for a repo",
+		"shw git worktree list [flags]",
 		runList,
+		repoDirFlag,
+		showStatusFlag,
 	))
 	worktree.AddChild(newLeafCommand(
 		"remove",
 		"Remove a worktree and local branch",
 		"Remove a worktree for a branch and delete the local branch",
-		"shw git worktree remove <repo-dir> <branch-name>",
+		"shw git worktree remove [flags] <branch-name>",
 		runRemove,
+		repoDirFlag,
 	))
 	worktree.AddChild(newLeafCommand(
-		"clean-all",
+		"prune-stale",
 		"Prune stale worktrees",
 		"Prune stale worktree metadata and remove worktrees for branches that no longer have remote-tracking refs",
-		"shw git worktree clean-all <repo-dir>",
-		runCleanAll,
+		"shw git worktree prune-stale [flags]",
+		runPruneStale,
+		repoDirFlag,
 	))
 	worktree.AddChild(newLeafCommand(
 		"path",
 		"Print a worktree path",
-		"Resolve a named worktree in Steven's preferred layout and print its path for use with cd or as a workdir",
-		"shw git worktree path <repo-dir> <name>",
+		`Resolve a named worktree in Steven's preferred layout and print its path so you can switch to it with commands like cd "$(shw git worktree path <worktree-name>)"`,
+		"shw git worktree path [flags] <worktree-name>",
 		runPath,
+		repoDirFlag,
 	))
 
 	return worktree
@@ -73,36 +97,69 @@ func newLeafCommand(name string, summary string, description string, usage strin
 
 func runCreate(args []string) error {
 	quiet, args := cli.ConsumeBoolFlag(args, quietFlag)
-	if len(args) != 2 {
-		return fmt.Errorf("usage: shw git worktree create [flags] <repo-dir> <branch-name>")
+	noUpdateDefaultBranch, args := cli.ConsumeBoolFlag(args, noUpdateDefaultBranchFlag)
+	repoDir, args, err := consumeRepoDir(args)
+	if err != nil {
+		return err
 	}
-	return Create(args[0], args[1], quiet)
+	if len(args) != 1 {
+		return fmt.Errorf("usage: shw git worktree create [flags] <branch-name>")
+	}
+	return CreateWithOptions(repoDir, args[0], quiet, !noUpdateDefaultBranch)
 }
 
 func runList(args []string) error {
-	if len(args) != 1 {
-		return fmt.Errorf("usage: shw git worktree list <repo-dir>")
+	showStatus, args := cli.ConsumeBoolFlag(args, showStatusFlag)
+	repoDir, args, err := consumeRepoDir(args)
+	if err != nil {
+		return err
 	}
-	return List(args[0])
+	if len(args) != 0 {
+		return fmt.Errorf("usage: shw git worktree list [flags]")
+	}
+	return List(repoDir, showStatus)
 }
 
 func runRemove(args []string) error {
-	if len(args) != 2 {
-		return fmt.Errorf("usage: shw git worktree remove <repo-dir> <branch-name>")
+	repoDir, args, err := consumeRepoDir(args)
+	if err != nil {
+		return err
 	}
-	return Remove(args[0], args[1])
+	if len(args) != 1 {
+		return fmt.Errorf("usage: shw git worktree remove [flags] <branch-name>")
+	}
+	return Remove(repoDir, args[0])
 }
 
-func runCleanAll(args []string) error {
-	if len(args) != 1 {
-		return fmt.Errorf("usage: shw git worktree clean-all <repo-dir>")
+func runPruneStale(args []string) error {
+	repoDir, args, err := consumeRepoDir(args)
+	if err != nil {
+		return err
 	}
-	return CleanAll(args[0])
+	if len(args) != 0 {
+		return fmt.Errorf("usage: shw git worktree prune-stale [flags]")
+	}
+	return CleanAll(repoDir)
 }
 
 func runPath(args []string) error {
-	if len(args) != 2 {
-		return fmt.Errorf("usage: shw git worktree path <repo-dir> <name>")
+	repoDir, args, err := consumeRepoDir(args)
+	if err != nil {
+		return err
 	}
-	return Path(args[0], args[1])
+	if len(args) != 1 {
+		return fmt.Errorf("usage: shw git worktree path [flags] <worktree-name>")
+	}
+	return Path(repoDir, args[0])
+}
+
+func consumeRepoDir(args []string) (string, []string, error) {
+	repoDir, filtered, err := cli.ConsumeStringFlag(args, repoDirFlag)
+	if err != nil {
+		return "", nil, err
+	}
+	if repoDir == "" {
+		repoDir = "."
+	}
+	return repoDir, filtered, nil
 }

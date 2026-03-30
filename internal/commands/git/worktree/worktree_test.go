@@ -15,14 +15,14 @@ func TestCommandIncludesExpectedSubcommands(t *testing.T) {
 		got[child.Name] = true
 	}
 
-	for _, name := range []string{"create", "list", "remove", "clean-all", "path"} {
+	for _, name := range []string{"create", "list", "remove", "prune-stale", "path"} {
 		if !got[name] {
 			t.Fatalf("expected subcommand %q to be present", name)
 		}
 	}
 }
 
-func TestCreateCommandIncludesQuietFlag(t *testing.T) {
+func TestCreateCommandIncludesExpectedFlags(t *testing.T) {
 	cmd := Command()
 
 	var create *cli.Command
@@ -35,8 +35,17 @@ func TestCreateCommandIncludesQuietFlag(t *testing.T) {
 	if create == nil {
 		t.Fatal("expected create command")
 	}
-	if len(create.Flags) != 1 || create.Flags[0].Long != "quiet" || create.Flags[0].Short != "q" {
+	if len(create.Flags) != 3 {
 		t.Fatalf("unexpected create flags: %+v", create.Flags)
+	}
+	if create.Flags[0].Long != "repo-dir" || create.Flags[0].Short != "r" {
+		t.Fatalf("missing repo-dir flag: %+v", create.Flags)
+	}
+	if create.Flags[1].Long != "quiet" || create.Flags[1].Short != "q" {
+		t.Fatalf("missing quiet flag: %+v", create.Flags)
+	}
+	if create.Flags[2].Long != "no-update-default-branch" {
+		t.Fatalf("missing no-update-default-branch flag: %+v", create.Flags)
 	}
 }
 
@@ -47,11 +56,11 @@ func TestLeafHandlersRejectWrongArgCounts(t *testing.T) {
 		args    []string
 		wantMsg string
 	}{
-		{name: "create", run: runCreate, args: []string{"repo"}, wantMsg: "usage: shw git worktree create"},
-		{name: "list", run: runList, args: nil, wantMsg: "usage: shw git worktree list"},
-		{name: "remove", run: runRemove, args: []string{"repo"}, wantMsg: "usage: shw git worktree remove"},
-		{name: "clean-all", run: runCleanAll, args: []string{"repo", "extra"}, wantMsg: "usage: shw git worktree clean-all"},
-		{name: "path", run: runPath, args: []string{"repo"}, wantMsg: "usage: shw git worktree path"},
+		{name: "create", run: runCreate, args: nil, wantMsg: "usage: shw git worktree create"},
+		{name: "list", run: runList, args: []string{"extra"}, wantMsg: "usage: shw git worktree list"},
+		{name: "remove", run: runRemove, args: nil, wantMsg: "usage: shw git worktree remove"},
+		{name: "prune-stale", run: runPruneStale, args: []string{"extra"}, wantMsg: "usage: shw git worktree prune-stale"},
+		{name: "path", run: runPath, args: nil, wantMsg: "usage: shw git worktree path"},
 	}
 
 	for _, tt := range tests {
@@ -64,5 +73,26 @@ func TestLeafHandlersRejectWrongArgCounts(t *testing.T) {
 				t.Fatalf("error got %q, want substring %q", err.Error(), tt.wantMsg)
 			}
 		})
+	}
+}
+
+func TestPathCommandHelpUsesWorktreeNamePlaceholder(t *testing.T) {
+	cmd := Command()
+
+	var pathCmd *cli.Command
+	for _, child := range cmd.Children {
+		if child.Name == "path" {
+			pathCmd = child
+			break
+		}
+	}
+	if pathCmd == nil {
+		t.Fatal("expected path command")
+	}
+	if !strings.Contains(pathCmd.Usage, "<worktree-name>") {
+		t.Fatalf("usage got %q, want worktree-name placeholder", pathCmd.Usage)
+	}
+	if !strings.Contains(pathCmd.Description, `cd "$(shw git worktree path <worktree-name>)"`) {
+		t.Fatalf("description got %q, want cd example", pathCmd.Description)
 	}
 }

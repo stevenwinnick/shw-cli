@@ -17,12 +17,16 @@ type entry struct {
 }
 
 func Create(repoDir string, branchName string, quiet bool) error {
-	return create(repoDir, branchName, quiet, os.Stdout)
+	return CreateWithOptions(repoDir, branchName, quiet, true)
 }
 
-func create(repoDir string, branchName string, quiet bool, stdout io.Writer) error {
+func CreateWithOptions(repoDir string, branchName string, quiet bool, updateDefaultBranch bool) error {
+	return create(repoDir, branchName, quiet, updateDefaultBranch, os.Stdout, os.Stderr)
+}
+
+func create(repoDir string, branchName string, quiet bool, updateDefaultBranch bool, stdout io.Writer, stderr io.Writer) error {
 	if strings.TrimSpace(repoDir) == "" || strings.TrimSpace(branchName) == "" {
-		return fmt.Errorf("usage: shw git worktree create [flags] <repo-dir> <branch-name>")
+		return fmt.Errorf("usage: shw git worktree create [flags] <branch-name>")
 	}
 
 	repoRoot, repoName, err := repoDetails(repoDir)
@@ -39,6 +43,11 @@ func create(repoDir string, branchName string, quiet bool, stdout io.Writer) err
 	if err != nil {
 		return err
 	}
+	if updateDefaultBranch {
+		if err := updateBranchBaseRef(repoRoot, defaultBranch, stderr); err != nil {
+			return err
+		}
+	}
 
 	baseRef, err := baseRef(repoRoot, defaultBranch)
 	if err != nil {
@@ -51,15 +60,16 @@ func create(repoDir string, branchName string, quiet bool, stdout io.Writer) err
 		return fmt.Errorf("failed to create worktree parent directory %q: %w", filepath.Dir(worktreePath), err)
 	}
 
+	addArgs := []string{"worktree", "add", "-b", branchName, worktreePath, baseRef}
 	if quiet {
-		if _, err := utils.CaptureCommandInDir(repoRoot, "git", "worktree", "add", "-b", branchName, worktreePath, baseRef); err != nil {
+		if err := utils.RunCommandInDirWithWriters(repoRoot, io.Discard, stderr, "git", addArgs...); err != nil {
 			return err
 		}
 		_, err = fmt.Fprintln(stdout, worktreePath)
 		return err
 	}
 
-	if err := utils.RunCommandInDir(repoRoot, "git", "worktree", "add", "-b", branchName, worktreePath, baseRef); err != nil {
+	if err := utils.RunCommandInDirWithWriters(repoRoot, stdout, stderr, "git", addArgs...); err != nil {
 		return err
 	}
 
@@ -67,13 +77,13 @@ func create(repoDir string, branchName string, quiet bool, stdout io.Writer) err
 	return err
 }
 
-func List(repoDir string) error {
-	return list(repoDir, os.Stdout)
+func List(repoDir string, showStatus bool) error {
+	return list(repoDir, showStatus, os.Stdout, os.Stderr)
 }
 
-func list(repoDir string, stdout io.Writer) error {
+func list(repoDir string, showStatus bool, stdout io.Writer, stderr io.Writer) error {
 	if strings.TrimSpace(repoDir) == "" {
-		return fmt.Errorf("usage: shw git worktree list <repo-dir>")
+		return fmt.Errorf("usage: shw git worktree list [flags]")
 	}
 
 	repoRoot, _, err := repoDetails(repoDir)
@@ -81,12 +91,22 @@ func list(repoDir string, stdout io.Writer) error {
 		return err
 	}
 
-	if err := utils.RunCommandInDir(repoRoot, "git", "worktree", "list"); err != nil {
+	if err := utils.RunCommandInDirWithWriters(repoRoot, stdout, stderr, "git", "worktree", "list"); err != nil {
 		return err
+	}
+	if !showStatus {
+		return nil
 	}
 
 	entries, err := listEntries(repoRoot)
 	if err != nil {
+		return err
+	}
+
+	if _, err := fmt.Fprintln(stdout); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(stdout, "Worktree statuses:"); err != nil {
 		return err
 	}
 
@@ -102,6 +122,7 @@ func list(repoDir string, stdout io.Writer) error {
 			continue
 		}
 
+		utils.PrintCommand(stderr, "git", "status", "--short")
 		status, err := utils.CaptureCommandInDir(entry.Path, "git", "status", "--short")
 		if err != nil {
 			if _, err := fmt.Fprintln(stdout, "(not accessible)"); err != nil {
@@ -128,12 +149,12 @@ func list(repoDir string, stdout io.Writer) error {
 }
 
 func Remove(repoDir string, branchName string) error {
-	return remove(repoDir, branchName, os.Stdout)
+	return remove(repoDir, branchName, os.Stdout, os.Stderr)
 }
 
-func remove(repoDir string, branchName string, stdout io.Writer) error {
+func remove(repoDir string, branchName string, stdout io.Writer, stderr io.Writer) error {
 	if strings.TrimSpace(repoDir) == "" || strings.TrimSpace(branchName) == "" {
-		return fmt.Errorf("usage: shw git worktree remove <repo-dir> <branch-name>")
+		return fmt.Errorf("usage: shw git worktree remove [flags] <branch-name>")
 	}
 
 	repoRoot, _, err := repoDetails(repoDir)
@@ -162,10 +183,7 @@ func remove(repoDir string, branchName string, stdout io.Writer) error {
 		return fmt.Errorf("no worktree found for branch %q\n\nAvailable worktrees:\n%s", branchName, strings.TrimSpace(listOutput))
 	}
 
-	if _, err := fmt.Fprintf(stdout, "Removing worktree: %s (branch: %s)\n", worktreePath, branchName); err != nil {
-		return err
-	}
-	if err := utils.RunCommandInDir(repoRoot, "git", "worktree", "remove", "--force", worktreePath); err != nil {
+	if err := utils.RunCommandInDirWithWriters(repoRoot, stdout, stderr, "git", "worktree", "remove", "--force", worktreePath); err != nil {
 		return err
 	}
 
@@ -180,10 +198,7 @@ func remove(repoDir string, branchName string, stdout io.Writer) error {
 	}
 
 	if refExists(repoRoot, "refs/heads/"+branchName) {
-		if _, err := fmt.Fprintf(stdout, "Deleting local branch: %s\n", branchName); err != nil {
-			return err
-		}
-		_ = utils.RunCommandInDir(repoRoot, "git", "branch", "-D", branchName)
+		_ = utils.RunCommandInDirWithWriters(repoRoot, stdout, stderr, "git", "branch", "-D", branchName)
 	}
 
 	_, err = fmt.Fprintln(stdout, "Worktree removed successfully")
@@ -191,12 +206,12 @@ func remove(repoDir string, branchName string, stdout io.Writer) error {
 }
 
 func CleanAll(repoDir string) error {
-	return cleanAll(repoDir, os.Stdout)
+	return cleanAll(repoDir, os.Stdout, os.Stderr)
 }
 
-func cleanAll(repoDir string, stdout io.Writer) error {
+func cleanAll(repoDir string, stdout io.Writer, stderr io.Writer) error {
 	if strings.TrimSpace(repoDir) == "" {
-		return fmt.Errorf("usage: shw git worktree clean-all <repo-dir>")
+		return fmt.Errorf("usage: shw git worktree prune-stale [flags]")
 	}
 
 	repoRoot, repoName, err := repoDetails(repoDir)
@@ -204,7 +219,7 @@ func cleanAll(repoDir string, stdout io.Writer) error {
 		return err
 	}
 
-	if err := utils.RunCommandInDir(repoRoot, "git", "worktree", "prune"); err != nil {
+	if err := utils.RunCommandInDirWithWriters(repoRoot, stdout, stderr, "git", "worktree", "prune"); err != nil {
 		return err
 	}
 
@@ -226,13 +241,13 @@ func cleanAll(repoDir string, stdout io.Writer) error {
 		if _, err := fmt.Fprintf(stdout, "Removing worktree %s: branch '%s' not on remote\n", entry.Path, entry.Branch); err != nil {
 			return err
 		}
-		if err := utils.RunCommandInDir(repoRoot, "git", "worktree", "remove", "--force", entry.Path); err != nil {
+		if err := utils.RunCommandInDirWithWriters(repoRoot, stdout, stderr, "git", "worktree", "remove", "--force", entry.Path); err != nil {
 			return err
 		}
 		if err := os.RemoveAll(filepath.Dir(entry.Path)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("failed to remove directory %q: %w", filepath.Dir(entry.Path), err)
 		}
-		_ = utils.RunCommandInDir(repoRoot, "git", "branch", "-D", entry.Branch)
+		_ = utils.RunCommandInDirWithWriters(repoRoot, stdout, stderr, "git", "branch", "-D", entry.Branch)
 	}
 
 	_, err = fmt.Fprintln(stdout, "Worktree cleanup complete")
@@ -245,7 +260,7 @@ func Path(repoDir string, name string) error {
 
 func switchTo(repoDir string, name string, stdout io.Writer) error {
 	if strings.TrimSpace(repoDir) == "" || strings.TrimSpace(name) == "" {
-		return fmt.Errorf("usage: shw git worktree path <repo-dir> <name>")
+		return fmt.Errorf("usage: shw git worktree path [flags] <worktree-name>")
 	}
 
 	repoRoot, repoName, err := repoDetails(repoDir)
@@ -400,6 +415,14 @@ func baseRef(repoRoot string, defaultBranch string) (string, error) {
 	}
 
 	return "", fmt.Errorf("could not find a base ref for default branch %q", defaultBranch)
+}
+
+func updateBranchBaseRef(repoRoot string, defaultBranch string, stderr io.Writer) error {
+	if !refExists(repoRoot, "refs/remotes/origin/"+defaultBranch) {
+		return nil
+	}
+
+	return utils.RunCommandInDirWithWriters(repoRoot, io.Discard, stderr, "git", "fetch", "origin", defaultBranch)
 }
 
 func refExists(repoRoot string, ref string) bool {
