@@ -1,4 +1,4 @@
-package cd
+package pd
 
 import (
 	"fmt"
