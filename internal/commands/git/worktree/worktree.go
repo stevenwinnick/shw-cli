@@ -18,18 +18,13 @@ var noUpdateDefaultBranchFlag = cli.Flag{
 	Description: "Skip fetching the default branch before creating the worktree",
 }
 
-var noCopyNavigationCommandFlag = cli.Flag{
-	Long:        "no-copy-navigation-command",
-	Description: "Do not copy the navigation command to the clipboard after creating the worktree",
-}
-
 var createWorktree = CreateWithOptions
 
 func Command() *cli.Command {
 	worktree := &cli.Command{
 		Name:        "worktree",
 		Summary:     "Manage git worktrees in Steven's preferred layout",
-		Description: "Create, list, remove, clean, and resolve git worktrees in Steven's preferred layout",
+		Description: "Create, list, remove, and clean git worktrees in Steven's preferred layout",
 		Usage:       "shw git worktree <command>",
 	}
 
@@ -41,7 +36,6 @@ func Command() *cli.Command {
 		runCreate,
 		repoDirFlag,
 		noUpdateDefaultBranchFlag,
-		noCopyNavigationCommandFlag,
 	))
 	worktree.AddChild(newLeafCommand(
 		"list",
@@ -67,14 +61,6 @@ func Command() *cli.Command {
 		runPruneStale,
 		repoDirFlag,
 	))
-	worktree.AddChild(newLeafCommand(
-		"path",
-		"Print a worktree path",
-		"Resolve a branch's worktree in Steven's preferred layout and print its path so you can switch to it with commands like `cd $(shw git worktree path <branch-name>)`",
-		"shw git worktree path [flags] <branch-name>",
-		runPath,
-		repoDirFlag,
-	))
 
 	return worktree
 }
@@ -92,7 +78,6 @@ func newLeafCommand(name string, summary string, description string, usage strin
 
 func runCreate(args []string) error {
 	noUpdateDefaultBranch, args := cli.ConsumeBoolFlag(args, noUpdateDefaultBranchFlag)
-	noCopyNavigationCommand, args := cli.ConsumeBoolFlag(args, noCopyNavigationCommandFlag)
 	repoDir, args, err := consumeRepoDir(args)
 	if err != nil {
 		return err
@@ -100,7 +85,7 @@ func runCreate(args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: shw git worktree create [flags] <branch-name>")
 	}
-	return createWorktree(repoDir, args[0], !noUpdateDefaultBranch, !noCopyNavigationCommand)
+	return createWorktree(repoDir, args[0], !noUpdateDefaultBranch)
 }
 
 func runList(args []string) error {
@@ -134,17 +119,6 @@ func runPruneStale(args []string) error {
 		return fmt.Errorf("usage: shw git worktree prune-stale [flags]")
 	}
 	return CleanAll(repoDir)
-}
-
-func runPath(args []string) error {
-	repoDir, args, err := consumeRepoDir(args)
-	if err != nil {
-		return err
-	}
-	if len(args) != 1 {
-		return fmt.Errorf("usage: shw git worktree path [flags] <branch-name>")
-	}
-	return Path(repoDir, args[0])
 }
 
 func consumeRepoDir(args []string) (string, []string, error) {
