@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"shw-cli/internal/repo"
+	"shw-cli/internal/utils"
 )
 
 func Repo(repoName string, stdout io.Writer) error {
@@ -27,12 +27,12 @@ func Repo(repoName string, stdout io.Writer) error {
 }
 
 func Default(dir string, stdout io.Writer) error {
-	repoRoot, repoName, err := repo.Details(dir)
+	repoRoot, repoName, err := utils.RepoDetails(dir)
 	if err != nil {
 		return err
 	}
 
-	defaultBranch, err := repo.DefaultBranch(repoRoot, repoName)
+	defaultBranch, err := utils.RepoDefaultBranch(repoRoot, repoName)
 	if err != nil {
 		return err
 	}
@@ -41,12 +41,12 @@ func Default(dir string, stdout io.Writer) error {
 }
 
 func Branch(dir string, branchName string, stdout io.Writer) error {
-	repoRoot, repoName, err := repo.Details(dir)
+	repoRoot, repoName, err := utils.RepoDetails(dir)
 	if err != nil {
 		return err
 	}
 
-	entries, err := repo.ListEntries(repoRoot)
+	entries, err := utils.WorktreeListEntries(repoRoot)
 	if err != nil {
 		return err
 	}
@@ -66,9 +66,9 @@ func Branch(dir string, branchName string, stdout io.Writer) error {
 		}
 	}
 
-	defaultBranch, _ := repo.DefaultBranch(repoRoot, repoName)
+	defaultBranch, _ := utils.RepoDefaultBranch(repoRoot, repoName)
 	if branchName == defaultBranch {
-		mainPath := repo.MainWorktreePath(entries, repoName)
+		mainPath := utils.WorktreeMainPath(entries, repoName)
 		if mainPath != "" {
 			if info, err := os.Stat(mainPath); err == nil && info.IsDir() {
 				_, err = fmt.Fprintln(stdout, mainPath)

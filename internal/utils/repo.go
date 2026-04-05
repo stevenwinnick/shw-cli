@@ -1,17 +1,15 @@
-package repo
+package utils
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"shw-cli/internal/utils"
 )
 
-// Details resolves the repo root and name from any directory inside a repo
+// RepoDetails resolves the repo root and name from any directory inside a repo
 // or from a repo container directory in the preferred worktree layout.
-func Details(dir string) (root string, name string, err error) {
+func RepoDetails(dir string) (root string, name string, err error) {
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to resolve directory %q: %w", dir, err)
@@ -28,10 +26,10 @@ func Details(dir string) (root string, name string, err error) {
 	return repoRoot, filepath.Base(repoRoot), nil
 }
 
-// ContainerDir finds the container directory for a repo in the preferred
+// RepoContainerDir finds the container directory for a repo in the preferred
 // worktree layout. The container holds the default-branch directory and
 // the worktrees directory.
-func ContainerDir(repoRoot string, repoName string) (string, error) {
+func RepoContainerDir(repoRoot string, repoName string) (string, error) {
 	parentDir := filepath.Dir(repoRoot)
 	grandparentDir := filepath.Dir(parentDir)
 	if filepath.Base(grandparentDir) == repoName {
@@ -53,20 +51,20 @@ func ContainerDir(repoRoot string, repoName string) (string, error) {
 	return "", fmt.Errorf("repo %q is not in the preferred worktree layout and CODE_ROOT is not set", repoRoot)
 }
 
-// DefaultBranch detects the default branch for a repo by checking the
+// RepoDefaultBranch detects the default branch for a repo by checking the
 // preferred layout structure first, then falling back to the remote HEAD.
-func DefaultBranch(repoRoot string, repoName string) (string, error) {
-	entries, err := ListEntries(repoRoot)
+func RepoDefaultBranch(repoRoot string, repoName string) (string, error) {
+	entries, err := WorktreeListEntries(repoRoot)
 	if err != nil {
 		return "", err
 	}
 
-	mainPath := MainWorktreePath(entries, repoName)
+	mainPath := WorktreeMainPath(entries, repoName)
 	if mainPath != "" {
 		return filepath.Base(filepath.Dir(mainPath)), nil
 	}
 
-	remoteHead, err := utils.CaptureCommandInDir(repoRoot, "git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+	remoteHead, err := CaptureCommandInDir(repoRoot, "git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
 	if err == nil {
 		return strings.TrimPrefix(strings.TrimSpace(remoteHead), "origin/"), nil
 	}
@@ -75,7 +73,7 @@ func DefaultBranch(repoRoot string, repoName string) (string, error) {
 }
 
 func resolveGitTopLevel(dir string) (string, error) {
-	repoRoot, err := utils.CaptureCommandInDir(dir, "git", "rev-parse", "--show-toplevel")
+	repoRoot, err := CaptureCommandInDir(dir, "git", "rev-parse", "--show-toplevel")
 	if err != nil {
 		return "", err
 	}

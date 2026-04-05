@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"shw-cli/internal/repo"
 	"shw-cli/internal/utils"
 )
 
@@ -25,17 +24,17 @@ func create(repoDir string, branchName string, updateDefaultBranch bool, stdout 
 		return fmt.Errorf("usage: shw git worktree create [flags] <branch-name>")
 	}
 
-	repoRoot, repoName, err := repo.Details(repoDir)
+	repoRoot, repoName, err := utils.RepoDetails(repoDir)
 	if err != nil {
 		return err
 	}
 
-	containerDir, err := repo.ContainerDir(repoRoot, repoName)
+	containerDir, err := utils.RepoContainerDir(repoRoot, repoName)
 	if err != nil {
 		return err
 	}
 
-	defaultBranch, err := repo.DefaultBranch(repoRoot, repoName)
+	defaultBranch, err := utils.RepoDefaultBranch(repoRoot, repoName)
 	if err != nil {
 		return err
 	}
@@ -74,7 +73,7 @@ func list(repoDir string, stdout io.Writer, stderr io.Writer) error {
 		return fmt.Errorf("usage: shw git worktree list")
 	}
 
-	repoRoot, _, err := repo.Details(repoDir)
+	repoRoot, _, err := utils.RepoDetails(repoDir)
 	if err != nil {
 		return err
 	}
@@ -91,17 +90,17 @@ func remove(repoDir string, branchName string, stdout io.Writer, stderr io.Write
 		return fmt.Errorf("usage: shw git worktree remove [flags] <branch-name>")
 	}
 
-	repoRoot, repoName, err := repo.Details(repoDir)
+	repoRoot, repoName, err := utils.RepoDetails(repoDir)
 	if err != nil {
 		return err
 	}
 
-	entries, err := repo.ListEntries(repoRoot)
+	entries, err := utils.WorktreeListEntries(repoRoot)
 	if err != nil {
 		return err
 	}
 
-	var targetEntry *repo.Entry
+	var targetEntry *utils.WorktreeEntry
 	for _, entry := range entries {
 		if entry.Branch == branchName {
 			entryCopy := entry
@@ -123,7 +122,7 @@ func remove(repoDir string, branchName string, stdout io.Writer, stderr io.Write
 	}
 
 	parentDir := filepath.Dir(targetEntry.Path)
-	if repo.IsPreferredLayoutWorktreePath(targetEntry.Path, repoName) {
+	if utils.WorktreeIsPreferredLayoutPath(targetEntry.Path, repoName) {
 		if _, err := os.Stat(parentDir); err == nil {
 			if _, err := fmt.Fprintf(stdout, "Removing directory: %s\n", parentDir); err != nil {
 				return err
@@ -151,7 +150,7 @@ func cleanAll(repoDir string, stdout io.Writer, stderr io.Writer) error {
 		return fmt.Errorf("usage: shw git worktree prune-stale [flags]")
 	}
 
-	repoRoot, repoName, err := repo.Details(repoDir)
+	repoRoot, repoName, err := utils.RepoDetails(repoDir)
 	if err != nil {
 		return err
 	}
@@ -160,12 +159,12 @@ func cleanAll(repoDir string, stdout io.Writer, stderr io.Writer) error {
 		return err
 	}
 
-	entries, err := repo.ListEntries(repoRoot)
+	entries, err := utils.WorktreeListEntries(repoRoot)
 	if err != nil {
 		return err
 	}
 
-	mainWorktree := repo.MainWorktreePath(entries, repoName)
+	mainWorktree := utils.WorktreeMainPath(entries, repoName)
 	for _, entry := range entries {
 		if entry.Path == mainWorktree || entry.Branch == "" {
 			continue
@@ -181,7 +180,7 @@ func cleanAll(repoDir string, stdout io.Writer, stderr io.Writer) error {
 		if err := utils.RunCommandInDirWithWriters(repoRoot, stdout, stderr, "git", "worktree", "remove", "--force", entry.Path); err != nil {
 			return err
 		}
-		if repo.IsPreferredLayoutWorktreePath(entry.Path, repoName) {
+		if utils.WorktreeIsPreferredLayoutPath(entry.Path, repoName) {
 			if err := os.RemoveAll(filepath.Dir(entry.Path)); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return fmt.Errorf("failed to remove directory %q: %w", filepath.Dir(entry.Path), err)
 			}
