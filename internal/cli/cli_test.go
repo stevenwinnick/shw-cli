@@ -2,8 +2,11 @@ package cli
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
+
+	"shw-cli/internal/utils"
 )
 
 func TestRootHelp(t *testing.T) {
@@ -91,6 +94,30 @@ func TestLeafReceivesArgs(t *testing.T) {
 	}
 	if len(got) != 1 || got[0] != "--bare" {
 		t.Fatalf("leaf did not receive passthrough args: %v", got)
+	}
+}
+
+func TestRunPropagatesCommandExitCode(t *testing.T) {
+	leaf := &Command{
+		Name:        "fail",
+		Description: "leaf",
+		Usage:       "shw fail",
+		Run: func(_ []string) error {
+			return utils.RunCommandInDirWithWriters("", io.Discard, io.Discard, "sh", "-c", "exit 3")
+		},
+	}
+	root := &Command{Name: "shw", Description: "root", Usage: "shw <command>"}
+	root.AddChild(leaf)
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	code := Run(root, []string{"fail"}, stdout, stderr)
+	if code != 3 {
+		t.Fatalf("expected exit code 3, got %d", code)
+	}
+	if stderr.String() != "" {
+		t.Fatalf("expected no wrapper error for a failed command, got: %s", stderr.String())
 	}
 }
 

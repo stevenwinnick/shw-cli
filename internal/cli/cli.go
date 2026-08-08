@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"os/exec"
 	"strings"
 	"text/tabwriter"
 )
@@ -36,6 +38,13 @@ func RootCommand(children ...*Command) *Command {
 
 func Run(root *Command, args []string, stdout io.Writer, stderr io.Writer) int {
 	if err := execute(root, args, stdout); err != nil {
+		// A command that ran and exited non-zero has already reported itself, so pass its
+		// status through instead of adding an error of our own
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() > 0 {
+			return exitErr.ExitCode()
+		}
+
 		fmt.Fprintf(stderr, "Error: %v\n", err)
 		return 1
 	}

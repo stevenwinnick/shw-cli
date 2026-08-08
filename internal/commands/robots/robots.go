@@ -25,6 +25,14 @@ func Command() *cli.Command {
 		Run:         runStart,
 	})
 
+	robots.AddChild(&cli.Command{
+		Name:        "run",
+		Summary:     "Run a single command as the robots user",
+		Description: fmt.Sprintf("Runs `sudo -u %s -i -- <command>`, exiting with the command's own exit code", robotsUser),
+		Usage:       "shw robots run -- <command>",
+		Run:         runRun,
+	})
+
 	return robots
 }
 
@@ -33,5 +41,30 @@ func runStart(args []string) error {
 		return fmt.Errorf("usage: shw robots start")
 	}
 
-	return utils.RunCommand("sudo", "-u", robotsUser, "-i")
+	return runAsRobots(nil)
+}
+
+func runRun(args []string) error {
+	if len(args) > 0 && args[0] == "--" {
+		args = args[1:]
+	}
+	if len(args) == 0 {
+		return fmt.Errorf("usage: shw robots run -- <command>")
+	}
+
+	return runAsRobots(args)
+}
+
+func runAsRobots(command []string) error {
+	return utils.RunCommand("sudo", sudoArgs(command)...)
+}
+
+func sudoArgs(command []string) []string {
+	args := []string{"-u", robotsUser, "-i"}
+	if len(command) > 0 {
+		args = append(args, "--")
+		args = append(args, command...)
+	}
+
+	return args
 }
