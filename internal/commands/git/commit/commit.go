@@ -9,7 +9,7 @@ import (
 
 const (
 	shwName         = "Steven Winnick"
-	shwEmail        = "112898228+stevenwinnick@users.noreply.github.com"
+	shwEmail        = "winnicksteven@gmail.com"
 	defaultEmptyMsg = "Empty commit"
 )
 
