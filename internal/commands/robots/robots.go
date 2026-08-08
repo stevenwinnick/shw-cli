@@ -41,7 +41,7 @@ func runStart(args []string) error {
 		return fmt.Errorf("usage: shw robots start")
 	}
 
-	return runAsRobots(nil)
+	return utils.RunCommand("sudo", "-u", robotsUser, "-i")
 }
 
 func runRun(args []string) error {
@@ -52,19 +52,7 @@ func runRun(args []string) error {
 		return fmt.Errorf("usage: shw robots run -- <command>")
 	}
 
-	return runAsRobots(args)
-}
-
-func runAsRobots(command []string) error {
-	return utils.RunCommand("sudo", sudoArgs(command)...)
-}
-
-func sudoArgs(command []string) []string {
-	args := []string{"-u", robotsUser, "-i"}
-	if len(command) > 0 {
-		args = append(args, "--")
-		args = append(args, command...)
-	}
-
-	return args
+	// `-i` runs the command through the robots user's login shell so it gets that user's environment
+	sudoArgs := append([]string{"-u", robotsUser, "-i", "--"}, args...)
+	return utils.RunCommand("sudo", sudoArgs...)
 }
