@@ -121,6 +121,31 @@ func TestRunPropagatesCommandExitCode(t *testing.T) {
 	}
 }
 
+func TestRunReportsErrorsFromCapturedCommands(t *testing.T) {
+	leaf := &Command{
+		Name:        "fail",
+		Description: "leaf",
+		Usage:       "shw fail",
+		Run: func(_ []string) error {
+			_, err := utils.CaptureCommand("sh", "-c", "echo boom >&2; exit 3")
+			return err
+		},
+	}
+	root := &Command{Name: "shw", Description: "root", Usage: "shw <command>"}
+	root.AddChild(leaf)
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	code := Run(root, []string{"fail"}, stdout, stderr)
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got %d", code)
+	}
+	if !strings.Contains(stderr.String(), "boom") {
+		t.Fatalf("expected captured output in error, got: %s", stderr.String())
+	}
+}
+
 func TestHelpIncludesLocalFlags(t *testing.T) {
 	leaf := &Command{
 		Name:        "local",

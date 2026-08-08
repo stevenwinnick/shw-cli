@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -9,6 +10,22 @@ import (
 	"strconv"
 	"strings"
 )
+
+// CommandExitError reports a command that ran with its output streamed to the terminal and exited
+// non-zero. The command has already written its own error output, so callers can propagate ExitCode
+// without reporting the error again.
+type CommandExitError struct {
+	ExitCode int
+	err      error
+}
+
+func (e *CommandExitError) Error() string {
+	return e.err.Error()
+}
+
+func (e *CommandExitError) Unwrap() error {
+	return e.err
+}
 
 func RunCommand(name string, args ...string) error {
 	return RunCommandInDir("", name, args...)
@@ -30,7 +47,14 @@ func RunCommandInDirWithWriters(dir string, stdout io.Writer, stderr io.Writer, 
 	cmd.Stderr = stderr
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("command failed: %s %s: %w", name, strings.Join(args, " "), err)
+		failure := fmt.Errorf("command failed: %s %s: %w", name, strings.Join(args, " "), err)
+
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() > 0 {
+			return &CommandExitError{ExitCode: exitErr.ExitCode(), err: failure}
+		}
+
+		return failure
 	}
 
 	return nil

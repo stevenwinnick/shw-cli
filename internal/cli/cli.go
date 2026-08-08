@@ -4,9 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
 	"strings"
 	"text/tabwriter"
+
+	"shw-cli/internal/utils"
 )
 
 type Command struct {
@@ -38,11 +39,11 @@ func RootCommand(children ...*Command) *Command {
 
 func Run(root *Command, args []string, stdout io.Writer, stderr io.Writer) int {
 	if err := execute(root, args, stdout); err != nil {
-		// A command that ran and exited non-zero has already reported itself, so pass its
-		// status through instead of adding an error of our own
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && exitErr.ExitCode() > 0 {
-			return exitErr.ExitCode()
+		// A command whose output was streamed to the terminal has already reported itself, so
+		// pass its status through instead of adding an error of our own
+		var exitErr *utils.CommandExitError
+		if errors.As(err, &exitErr) {
+			return exitErr.ExitCode
 		}
 
 		fmt.Fprintf(stderr, "Error: %v\n", err)
