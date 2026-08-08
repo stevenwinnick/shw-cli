@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -118,6 +119,31 @@ func TestRunPropagatesCommandExitCode(t *testing.T) {
 	}
 	if stderr.String() != "" {
 		t.Fatalf("expected no wrapper error for a failed command, got: %s", stderr.String())
+	}
+}
+
+func TestRunReportsWrappedContextAroundFailedCommands(t *testing.T) {
+	leaf := &Command{
+		Name:        "fail",
+		Description: "leaf",
+		Usage:       "shw fail",
+		Run: func(_ []string) error {
+			err := utils.RunCommandInDirWithWriters("", io.Discard, io.Discard, "sh", "-c", "exit 3")
+			return fmt.Errorf("failed to pull latest changes: %w", err)
+		},
+	}
+	root := &Command{Name: "shw", Description: "root", Usage: "shw <command>"}
+	root.AddChild(leaf)
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	code := Run(root, []string{"fail"}, stdout, stderr)
+	if code != 3 {
+		t.Fatalf("expected exit code 3, got %d", code)
+	}
+	if !strings.Contains(stderr.String(), "failed to pull latest changes") {
+		t.Fatalf("expected wrapper context in stderr, got: %s", stderr.String())
 	}
 }
 
