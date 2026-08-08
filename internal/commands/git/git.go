@@ -2,6 +2,7 @@ package git
 
 import (
 	"shw-cli/internal/cli"
+	commitcmd "shw-cli/internal/commands/git/commit"
 	prcmd "shw-cli/internal/commands/git/pr"
 	pushcmd "shw-cli/internal/commands/git/push"
 	repocmd "shw-cli/internal/commands/git/repo"
@@ -20,5 +21,6 @@ func Command() *cli.Command {
 	git.AddChild(pushcmd.Command())
 	git.AddChild(worktreecmd.Command())
 	git.AddChild(prcmd.Command())
+	git.AddChild(commitcmd.Command())
 	return git
 }
