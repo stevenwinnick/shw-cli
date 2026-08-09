@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"text/tabwriter"
+
+	"shw-cli/internal/utils"
 )
 
 type Command struct {
@@ -36,7 +39,20 @@ func RootCommand(children ...*Command) *Command {
 
 func Run(root *Command, args []string, stdout io.Writer, stderr io.Writer) int {
 	if err := execute(root, args, stdout); err != nil {
+		// A command whose output was streamed to the terminal has already reported itself
+		if exitErr, ok := err.(*utils.CommandExitError); ok {
+			return exitErr.ExitCode
+		}
+
 		fmt.Fprintf(stderr, "Error: %v\n", err)
+
+		// Context a caller added around a streamed failure is worth printing, but the command's
+		// own exit code is still the more useful status
+		var wrapped *utils.CommandExitError
+		if errors.As(err, &wrapped) {
+			return wrapped.ExitCode
+		}
+
 		return 1
 	}
 
