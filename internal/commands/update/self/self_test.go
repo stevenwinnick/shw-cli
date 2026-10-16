@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"shw-cli/internal/testutil"
@@ -23,37 +24,37 @@ func TestCommandShape(t *testing.T) {
 	}
 }
 
-func TestResolveTrunkDir(t *testing.T) {
+func TestResolveRepoDir(t *testing.T) {
 	t.Run("returns error when CODE_ROOT is not set", func(t *testing.T) {
 		t.Setenv("CODE_ROOT", "")
-		_, err := resolvetrunkDir()
+		_, err := resolveRepoDir()
 		if err == nil {
 			t.Fatal("expected error when CODE_ROOT is empty")
 		}
 	})
 
-	t.Run("returns error when trunk dir does not exist", func(t *testing.T) {
+	t.Run("returns error when repo dir does not exist", func(t *testing.T) {
 		t.Setenv("CODE_ROOT", t.TempDir())
-		_, err := resolvetrunkDir()
+		_, err := resolveRepoDir()
 		if err == nil {
-			t.Fatal("expected error when trunk dir does not exist")
+			t.Fatal("expected error when repo dir does not exist")
 		}
 	})
 
-	t.Run("returns trunk dir when it exists", func(t *testing.T) {
+	t.Run("returns repo dir when it exists", func(t *testing.T) {
 		codeRoot := t.TempDir()
-		trunkDir := filepath.Join(codeRoot, "shw-cli", "trunk", "shw-cli")
-		if err := os.MkdirAll(trunkDir, 0o755); err != nil {
-			t.Fatalf("failed to create trunk dir: %v", err)
+		repoDir := filepath.Join(codeRoot, "shw-cli")
+		if err := os.MkdirAll(repoDir, 0o755); err != nil {
+			t.Fatalf("failed to create repo dir: %v", err)
 		}
 
 		t.Setenv("CODE_ROOT", codeRoot)
-		got, err := resolvetrunkDir()
+		got, err := resolveRepoDir()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if got != trunkDir {
-			t.Fatalf("got %q, want %q", got, trunkDir)
+		if got != repoDir {
+			t.Fatalf("got %q, want %q", got, repoDir)
 		}
 	})
 }
@@ -61,32 +62,32 @@ func TestResolveTrunkDir(t *testing.T) {
 func TestRunPullsAndInstalls(t *testing.T) {
 	testutil.SkipIfWindows(t)
 
-	// Set up a fake git repo as the trunk
+	// Set up a fake shw-cli checkout on trunk
 	codeRoot := t.TempDir()
-	trunkDir := filepath.Join(codeRoot, "shw-cli", "trunk", "shw-cli")
-	scriptsDir := filepath.Join(trunkDir, "scripts")
+	repoDir := filepath.Join(codeRoot, "shw-cli")
+	scriptsDir := filepath.Join(repoDir, "scripts")
 	if err := os.MkdirAll(scriptsDir, 0o755); err != nil {
 		t.Fatalf("failed to create scripts dir: %v", err)
 	}
 
 	// Initialize a git repo so git pull has something to work with
-	runGit(t, trunkDir, "init", "--initial-branch", "trunk")
-	runGit(t, trunkDir, "config", "user.name", "Test User")
-	runGit(t, trunkDir, "config", "user.email", "test@example.com")
+	runGit(t, repoDir, "init", "--initial-branch", "trunk")
+	runGit(t, repoDir, "config", "user.name", "Test User")
+	runGit(t, repoDir, "config", "user.email", "test@example.com")
 
 	// Create a marker file that install.sh will touch
 	markerFile := filepath.Join(t.TempDir(), "install-ran")
 	testutil.WriteExecutable(t, scriptsDir, "install.sh", "#!/bin/bash\ntouch "+markerFile+"\n")
 
-	runGit(t, trunkDir, "add", ".")
-	runGit(t, trunkDir, "commit", "-m", "initial")
+	runGit(t, repoDir, "add", ".")
+	runGit(t, repoDir, "commit", "-m", "initial")
 
 	// Set up a bare remote so git pull works
 	remoteDir := filepath.Join(t.TempDir(), "remote.git")
-	runGit(t, "", "clone", "--bare", trunkDir, remoteDir)
-	runGit(t, trunkDir, "remote", "add", "origin", remoteDir)
-	runGit(t, trunkDir, "fetch", "origin")
-	runGit(t, trunkDir, "branch", "--set-upstream-to=origin/trunk", "trunk")
+	runGit(t, "", "clone", "--bare", repoDir, remoteDir)
+	runGit(t, repoDir, "remote", "add", "origin", remoteDir)
+	runGit(t, repoDir, "fetch", "origin")
+	runGit(t, repoDir, "branch", "--set-upstream-to=origin/trunk", "trunk")
 
 	t.Setenv("CODE_ROOT", codeRoot)
 
@@ -96,6 +97,22 @@ func TestRunPullsAndInstalls(t *testing.T) {
 
 	if _, err := os.Stat(markerFile); err != nil {
 		t.Fatalf("install.sh did not run: marker file not found: %v", err)
+	}
+}
+
+func TestRunRejectsNonTrunkBranch(t *testing.T) {
+	codeRoot := t.TempDir()
+	repoDir := filepath.Join(codeRoot, "shw-cli")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatalf("failed to create repo dir: %v", err)
+	}
+	runGit(t, repoDir, "init", "--initial-branch", "steven/feature")
+
+	t.Setenv("CODE_ROOT", codeRoot)
+
+	err := run(nil)
+	if err == nil || !strings.Contains(err.Error(), "switch to trunk first") {
+		t.Fatalf("expected non-trunk branch error, got %v", err)
 	}
 }
 
