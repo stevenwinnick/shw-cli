@@ -3,9 +3,9 @@ package cli
 import "testing"
 
 func TestConsumeBoolFlagRemovesMatchingFlag(t *testing.T) {
-	flag := Flag{Long: "no-worktree-setup"}
+	flag := Flag{Long: "dry-run"}
 
-	consumed, filtered := ConsumeBoolFlag([]string{"--no-worktree-setup", "--bare"}, flag)
+	consumed, filtered := ConsumeBoolFlag([]string{"--dry-run", "--bare"}, flag)
 	if !consumed {
 		t.Fatal("expected flag to be consumed")
 	}
@@ -15,13 +15,13 @@ func TestConsumeBoolFlagRemovesMatchingFlag(t *testing.T) {
 }
 
 func TestConsumeBoolFlagStopsAtDoubleDash(t *testing.T) {
-	flag := Flag{Long: "no-worktree-setup"}
+	flag := Flag{Long: "dry-run"}
 
-	consumed, filtered := ConsumeBoolFlag([]string{"--", "--no-worktree-setup"}, flag)
+	consumed, filtered := ConsumeBoolFlag([]string{"--", "--dry-run"}, flag)
 	if consumed {
 		t.Fatal("expected flag after -- to be left alone")
 	}
-	if len(filtered) != 2 || filtered[0] != "--" || filtered[1] != "--no-worktree-setup" {
+	if len(filtered) != 2 || filtered[0] != "--" || filtered[1] != "--dry-run" {
 		t.Fatalf("filtered args mismatch: %v", filtered)
 	}
 }

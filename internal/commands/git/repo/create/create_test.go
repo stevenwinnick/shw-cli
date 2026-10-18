@@ -10,7 +10,7 @@ func TestCommandIncludesExpectedSubcommands(t *testing.T) {
 		got[child.Name] = true
 	}
 
-	for _, name := range []string{"githubfromlocal"} {
+	for _, name := range []string{"local", "localandgithub", "githubfromlocal"} {
 		if !got[name] {
 			t.Fatalf("expected subcommand %q to be present", name)
 		}

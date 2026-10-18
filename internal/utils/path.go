@@ -53,3 +53,21 @@ func EnsureExistingDir(dir string) error {
 
 	return nil
 }
+
+func EnsureDir(dir string) error {
+	info, err := os.Stat(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("failed to create directory %q: %w", dir, err)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to access directory %q: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("path exists but is not a directory: %s", dir)
+	}
+
+	return nil
+}

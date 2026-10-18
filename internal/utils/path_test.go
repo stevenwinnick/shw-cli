@@ -28,6 +28,35 @@ func TestResolveRelativeDirRejectsEmpty(t *testing.T) {
 		t.Fatal("expected error for empty path")
 	}
 }
+func TestEnsureDirCreatesDirectory(t *testing.T) {
+	parent := t.TempDir()
+	target := filepath.Join(parent, "new", "repo")
+
+	if err := EnsureDir(target); err != nil {
+		t.Fatalf("EnsureDir returned error: %v", err)
+	}
+
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("expected directory to exist: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("expected directory, got non-directory at %q", target)
+	}
+}
+
+func TestEnsureDirRejectsExistingFile(t *testing.T) {
+	parent := t.TempDir()
+	target := filepath.Join(parent, "file.txt")
+	if err := os.WriteFile(target, []byte("x"), 0o644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+
+	if err := EnsureDir(target); err == nil {
+		t.Fatal("expected error when path is an existing file")
+	}
+}
+
 func TestEnsureExistingDirRequiresExistingDirectory(t *testing.T) {
 	parent := t.TempDir()
 	missing := filepath.Join(parent, "missing")
