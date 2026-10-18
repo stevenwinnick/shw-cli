@@ -1,17 +1,9 @@
 package pr
 
 import (
-	"fmt"
-
 	"shw-cli/internal/cli"
+	"shw-cli/internal/utils"
 )
-
-var repoDirFlag = cli.Flag{
-	Long:        "repo-dir",
-	Short:       "r",
-	ValueName:   "<repo-dir>",
-	Description: "Use a repo other than the current directory",
-}
 
 func Command() *cli.Command {
 	pr := &cli.Command{
@@ -23,10 +15,9 @@ func Command() *cli.Command {
 
 	pr.AddChild(&cli.Command{
 		Name:        "merge",
-		Summary:     "Squash-merge a PR and clean up its worktree",
-		Description: "Squash-merge the pull request for a branch, delete the remote branch, and remove the local worktree and branch. Defaults to the branch checked out in the current directory.",
-		Usage:       "shw git pr merge [flags] [<branch>]",
-		Flags:       []cli.Flag{repoDirFlag},
+		Summary:     "Squash-merge a PR and delete its branch",
+		Description: "Runs `gh pr merge [<branch>] --squash --delete-branch`. Defaults to the PR for the current branch; any extra args are passed through to gh.",
+		Usage:       "shw git pr merge [<branch>] [gh-pr-merge-args...]",
 		Run:         runMerge,
 	})
 
@@ -34,21 +25,7 @@ func Command() *cli.Command {
 }
 
 func runMerge(args []string) error {
-	repoDir, args, err := cli.ConsumeStringFlag(args, repoDirFlag)
-	if err != nil {
-		return err
-	}
-	if repoDir == "" {
-		repoDir = "."
-	}
-	if len(args) > 1 {
-		return fmt.Errorf("usage: shw git pr merge [flags] [<branch>]")
-	}
-
-	branch := ""
-	if len(args) == 1 {
-		branch = args[0]
-	}
-
-	return Merge(repoDir, branch)
+	ghArgs := append([]string{"pr", "merge"}, args...)
+	ghArgs = append(ghArgs, "--squash", "--delete-branch")
+	return utils.RunCommand("gh", ghArgs...)
 }

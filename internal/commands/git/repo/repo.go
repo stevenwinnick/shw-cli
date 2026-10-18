@@ -9,7 +9,7 @@ func Command() *cli.Command {
 	repo := &cli.Command{
 		Name:        "repo",
 		Summary:     "Repository lifecycle helpers",
-		Description: "Commands for creating local and GitHub repositories",
+		Description: "Commands for creating GitHub repositories",
 		Usage:       "shw git repo <command>",
 	}
 

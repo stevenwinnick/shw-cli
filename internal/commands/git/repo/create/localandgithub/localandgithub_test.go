@@ -31,13 +31,9 @@ func TestRunCallsGitThenGitHubInTargetDir(t *testing.T) {
 		t.Fatalf("run returned error: %v", err)
 	}
 
-	repoRoot := filepath.Join(rootDir, "repo")
-	repoDir := filepath.Join(repoRoot, "trunk", "repo")
+	repoDir := filepath.Join(rootDir, "repo")
 	if !isDir(t, filepath.Join(repoDir, ".git")) {
 		t.Fatalf("expected git directory %q to exist", filepath.Join(repoDir, ".git"))
-	}
-	if !isDir(t, filepath.Join(repoRoot, "worktrees")) {
-		t.Fatalf("expected worktrees directory %q to exist", filepath.Join(repoRoot, "worktrees"))
 	}
 
 	currentBranch := strings.TrimSpace(string(runGit(t, repoDir, "branch", "--show-current")))
@@ -46,45 +42,6 @@ func TestRunCallsGitThenGitHubInTargetDir(t *testing.T) {
 	}
 
 	wantDir := realPath(t, repoDir)
-	if got := realPath(t, strings.TrimSpace(string(mustReadFile(t, ghDirLog)))); got != wantDir {
-		t.Fatalf("gh ran in %q, want %q", got, wantDir)
-	}
-
-	assertArgs(t, testutil.ReadLines(t, ghArgsLog), []string{"repo", "create", "my-repo", "--private"})
-}
-
-func TestRunAllowsSkippingWorktreeSetup(t *testing.T) {
-	testutil.SkipIfWindows(t)
-
-	rootDir := t.TempDir()
-	testutil.SetWorkingDir(t, rootDir)
-	testutil.SetStdin(t, "repo\n")
-
-	binDir := t.TempDir()
-	ghDirLog := filepath.Join(t.TempDir(), "gh-dir.log")
-	ghArgsLog := filepath.Join(t.TempDir(), "gh-args.log")
-	testutil.WriteExecutable(t, binDir, "gh", fakeGhScript())
-	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("FAKE_GH_DIR_FILE", ghDirLog)
-	t.Setenv("FAKE_GH_ARGS_FILE", ghArgsLog)
-
-	if err := run([]string{"--no-worktree-setup", "my-repo", "--private"}); err != nil {
-		t.Fatalf("run returned error: %v", err)
-	}
-
-	repoDir := filepath.Join(rootDir, "repo")
-	if !isDir(t, filepath.Join(repoDir, ".git")) {
-		t.Fatalf("expected git directory %q to exist", filepath.Join(repoDir, ".git"))
-	}
-	if _, err := os.Stat(filepath.Join(rootDir, "repo", "worktrees")); !os.IsNotExist(err) {
-		t.Fatalf("expected worktrees directory to be absent, stat error: %v", err)
-	}
-
-	wantDir := realPath(t, repoDir)
-	currentBranch := strings.TrimSpace(string(runGit(t, repoDir, "branch", "--show-current")))
-	if currentBranch == "" {
-		t.Fatal("expected a current branch in the created repository")
-	}
 	if got := realPath(t, strings.TrimSpace(string(mustReadFile(t, ghDirLog)))); got != wantDir {
 		t.Fatalf("gh ran in %q, want %q", got, wantDir)
 	}

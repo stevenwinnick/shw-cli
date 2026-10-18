@@ -10,52 +10,20 @@ import (
 	"shw-cli/internal/testutil"
 )
 
-func TestRunUsesWorktreeSetupAndGitInit(t *testing.T) {
+func TestRunCreatesRepoInPromptedDir(t *testing.T) {
 	testutil.SkipIfWindows(t)
 
 	rootDir := t.TempDir()
 	testutil.SetWorkingDir(t, rootDir)
 	testutil.SetStdin(t, "repo\n")
 
-	if err := run([]string{"--initial-branch", "trunk", "--bare"}); err != nil {
-		t.Fatalf("run returned error: %v", err)
-	}
-
-	repoRoot := filepath.Join(rootDir, "repo")
-	bareRepoDir := filepath.Join(repoRoot, "trunk", "repo")
-	if !isDir(t, bareRepoDir) {
-		t.Fatalf("expected bare repo directory %q to exist", bareRepoDir)
-	}
-	if !isDir(t, filepath.Join(repoRoot, "worktrees")) {
-		t.Fatalf("expected worktrees directory %q to exist", filepath.Join(repoRoot, "worktrees"))
-	}
-
-	if got := strings.TrimSpace(string(runGit(t, "", "--git-dir", bareRepoDir, "rev-parse", "--is-bare-repository"))); got != "true" {
-		t.Fatalf("expected bare repository, got %q", got)
-	}
-	head := strings.TrimSpace(string(mustReadFile(t, filepath.Join(bareRepoDir, "HEAD"))))
-	if head != "ref: refs/heads/trunk" {
-		t.Fatalf("HEAD got %q, want %q", head, "ref: refs/heads/trunk")
-	}
-}
-
-func TestRunAllowsSkippingWorktreeSetup(t *testing.T) {
-	testutil.SkipIfWindows(t)
-
-	rootDir := t.TempDir()
-	testutil.SetWorkingDir(t, rootDir)
-	testutil.SetStdin(t, "repo\n")
-
-	if err := run([]string{"--no-worktree-setup", "--initial-branch", "feature"}); err != nil {
+	if err := run([]string{"--initial-branch", "feature"}); err != nil {
 		t.Fatalf("run returned error: %v", err)
 	}
 
 	repoDir := filepath.Join(rootDir, "repo")
 	if !isDir(t, filepath.Join(repoDir, ".git")) {
 		t.Fatalf("expected git directory %q to exist", filepath.Join(repoDir, ".git"))
-	}
-	if _, err := os.Stat(filepath.Join(repoDir, "worktrees")); !os.IsNotExist(err) {
-		t.Fatalf("expected worktrees directory to be absent, stat error: %v", err)
 	}
 
 	currentBranch := strings.TrimSpace(string(runGit(t, repoDir, "branch", "--show-current")))
@@ -74,33 +42,6 @@ func TestRunStopsOnPromptError(t *testing.T) {
 	if !strings.Contains(err.Error(), "directory path is required") {
 		t.Fatalf("unexpected error: %v", err)
 	}
-}
-
-func mustReadFile(t *testing.T, path string) []byte {
-	t.Helper()
-
-	content, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read %q: %v", path, err)
-	}
-
-	return content
-}
-
-func realPath(t *testing.T, path string) string {
-	t.Helper()
-
-	resolved, err := filepath.EvalSymlinks(path)
-	if err == nil {
-		return resolved
-	}
-
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		t.Fatalf("failed to resolve path %q: %v", path, err)
-	}
-
-	return absolute
 }
 
 func runGit(t *testing.T, dir string, args ...string) []byte {

@@ -5,33 +5,25 @@ import (
 	"shw-cli/internal/utils"
 )
 
-var noWorktreesFlag = cli.Flag{
-	Long:        "no-worktree-setup",
-	Description: "Skip the default worktree setup and create the repo directly in the prompted directory",
-}
-
 func Command() *cli.Command {
 	return &cli.Command{
 		Name:        "local",
 		Summary:     "Create a local git repo",
 		Description: "Creates a local git repo",
-		Usage:       "shw git repo create local [flags] [git-init-args...]",
-		Flags:       []cli.Flag{noWorktreesFlag},
+		Usage:       "shw git repo create local [git-init-args...]",
 		Run:         run,
 	}
 }
 
 func run(args []string) error {
-	noWorktrees, gitInitArgs := cli.ConsumeBoolFlag(args, noWorktreesFlag)
-
-	targetPaths, err := utils.PromptRelativeRepoTargetPaths("Relative repo path: ", gitInitArgs, !noWorktrees)
+	repoDir, err := utils.PromptRelativeDir("Relative repo path: ")
 	if err != nil {
 		return err
 	}
-	if err := utils.EnsureRepoTargetPaths(targetPaths); err != nil {
+	if err := utils.EnsureDir(repoDir); err != nil {
 		return err
 	}
 
-	gitArgs := append([]string{"init"}, gitInitArgs...)
-	return utils.RunCommandInDir(targetPaths.WorkingDir, "git", gitArgs...)
+	gitArgs := append([]string{"init"}, args...)
+	return utils.RunCommandInDir(repoDir, "git", gitArgs...)
 }
